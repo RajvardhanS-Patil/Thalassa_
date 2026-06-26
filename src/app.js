@@ -172,7 +172,7 @@ function init() {
     attributionControl: false
   }).setView([10.4, 76.0], 8);
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 18,
     minZoom: 6
   }).addTo(map);
@@ -606,16 +606,16 @@ function updateMatsyaAISec(cell, liveForecast = null) {
     document.getElementById('eco-risk-label').textContent = '--';
     document.getElementById('eco-risk-bar').style.width = '0%';
     document.getElementById('eco-risk-badge').textContent = '--';
-    document.getElementById('eco-risk-badge').style.background = 'rgba(255,255,255,0.05)';
-    document.getElementById('eco-risk-badge').style.color = '#aaa';
+    document.getElementById('eco-risk-badge').style.background = 'rgba(0,0,0,0.05)';
+    document.getElementById('eco-risk-badge').style.color = '#555';
     document.getElementById('breakdown-e').textContent = '--';
     document.getElementById('breakdown-b').textContent = '--';
     document.getElementById('breakdown-o').textContent = '--';
     document.getElementById('breakdown-a').textContent = '--';
     document.getElementById('breakdown-v').textContent = '--';
     document.getElementById('advisory-badge').textContent = '--';
-    document.getElementById('advisory-badge').style.background = 'rgba(255,255,255,0.05)';
-    document.getElementById('advisory-badge').style.color = '#aaa';
+    document.getElementById('advisory-badge').style.background = 'rgba(0,0,0,0.05)';
+    document.getElementById('advisory-badge').style.color = '#555';
     document.getElementById('advisory-reason').textContent = 'Select a location to synthesize advisory.';
     document.getElementById('advisory-wave').textContent = '--';
     document.getElementById('advisory-wind').textContent = '--';
@@ -686,17 +686,17 @@ function updateMatsyaAISec(cell, liveForecast = null) {
   const ecoBadge = document.getElementById('eco-risk-badge');
   ecoBadge.textContent = riskLevel;
   if (riskLevel === 'Critical') {
-    ecoBadge.style.background = 'rgba(220, 38, 38, 0.2)';
-    ecoBadge.style.color = '#ff8888';
+    ecoBadge.style.background = 'rgba(220, 38, 38, 0.15)';
+    ecoBadge.style.color = '#b91c1c';
   } else if (riskLevel === 'High') {
-    ecoBadge.style.background = 'rgba(249, 115, 22, 0.2)';
-    ecoBadge.style.color = '#ffb088';
+    ecoBadge.style.background = 'rgba(249, 115, 22, 0.15)';
+    ecoBadge.style.color = '#c2410c';
   } else if (riskLevel === 'Moderate') {
-    ecoBadge.style.background = 'rgba(234, 179, 8, 0.2)';
-    ecoBadge.style.color = '#ffeb88';
+    ecoBadge.style.background = 'rgba(234, 179, 8, 0.15)';
+    ecoBadge.style.color = '#854d0e';
   } else {
-    ecoBadge.style.background = 'rgba(34, 197, 94, 0.2)';
-    ecoBadge.style.color = '#88ff88';
+    ecoBadge.style.background = 'rgba(34, 197, 94, 0.15)';
+    ecoBadge.style.color = '#15803d';
   }
 
   // Update breakdowns
@@ -710,14 +710,14 @@ function updateMatsyaAISec(cell, liveForecast = null) {
   const advBadge = document.getElementById('advisory-badge');
   advBadge.textContent = advisoryLevel;
   if (advisoryLevel === 'Avoid') {
-    advBadge.style.background = 'rgba(220, 38, 38, 0.2)';
-    advBadge.style.color = '#ff8888';
+    advBadge.style.background = 'rgba(220, 38, 38, 0.15)';
+    advBadge.style.color = '#b91c1c';
   } else if (advisoryLevel === 'Caution') {
-    advBadge.style.background = 'rgba(234, 179, 8, 0.2)';
-    advBadge.style.color = '#ffeb88';
+    advBadge.style.background = 'rgba(234, 179, 8, 0.15)';
+    advBadge.style.color = '#854d0e';
   } else {
-    advBadge.style.background = 'rgba(34, 197, 94, 0.2)';
-    advBadge.style.color = '#88ff88';
+    advBadge.style.background = 'rgba(34, 197, 94, 0.15)';
+    advBadge.style.color = '#15803d';
   }
 
   // Reason texts matching the Fishing Advisory Engine rules

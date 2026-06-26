@@ -7,37 +7,37 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono&family=Inter:wght@400;500;600&display=swap');
 
 :root {
-  /* HSL/Hex Values from the MatsyaDrishti Manual */
-  --color-surface: #0a151a; /* Deep ocean midnight background canvas */
-  --color-surface-container: #172126; /* Intermediate panel background */
-  --color-primary: #a6cfbe; /* Sage green highlight/success indicators */
-  --color-secondary: #afcdc2; /* Muted sage borders and text elements */
-  --color-status-info: #00a3ff; /* Live streams & radar sweep overlays */
-  --color-status-critical: #9d0300; /* Bleaching stress and illegal vessel violations */
-  --color-surface-glass: rgba(24, 61, 61, 0.6); /* Blended semi-transparent containers */
-  --color-border-glow: rgba(147, 177, 166, 0.2); /* Interactive subtle glow borders */
+  /* Premium Light/Editorial Theme variables */
+  --color-surface: #ffffff; /* Soft clean white background canvas */
+  --color-surface-container: #f8f6f0; /* Coastal sand container background */
+  --color-primary: #004d40; /* Forest Green / Safe Zone alert highlights */
+  --color-secondary: #5c6f68; /* Soft slate/muted green borders & secondary text */
+  --color-status-info: #0284c7; /* Sky Marine Blue */
+  --color-status-critical: #dc2626; /* Bleaching stress / violation alerts */
+  --color-surface-glass: rgba(255, 255, 255, 0.75); /* Translucent white glass containers */
+  --color-border-glow: rgba(92, 111, 104, 0.2); /* Interactive subtle glow borders */
 
-  /* Map old variables to the new ones for compatibility and dark theme */
-  --cohere-black: var(--color-surface);
-  --primary-color: var(--color-primary);
-  --ink: #ffffff;
-  --deep-green: var(--color-primary);
-  --dark-navy: var(--color-surface);
+  /* Map old variables to the new ones for compatibility and light theme */
+  --cohere-black: #001d3d; /* Deep Ocean Navy */
+  --primary-color: #003566; /* INCOIS Marine Blue */
+  --ink: #1e293b; /* Dark slate ink */
+  --deep-green: #004d40; /* Forest Green */
+  --dark-navy: #000814;
   --canvas: var(--color-surface);
   --soft-stone: var(--color-surface-container);
-  --pale-green: rgba(166, 207, 190, 0.15);
-  --pale-blue: rgba(0, 163, 255, 0.15);
-  --hairline: var(--color-border-glow);
-  --border-light: var(--color-border-glow);
-  --card-border: var(--color-border-glow);
-  --muted: var(--color-secondary);
-  --slate: var(--color-secondary);
-  --body-muted: #d9e4eb;
+  --pale-green: rgba(0, 77, 64, 0.08);
+  --pale-blue: rgba(2, 132, 199, 0.08);
+  --hairline: rgba(0, 0, 0, 0.08);
+  --border-light: rgba(0, 0, 0, 0.08);
+  --card-border: rgba(0, 0, 0, 0.04);
+  --muted: #64748b;
+  --slate: #475569;
+  --body-muted: #334155;
   --action-blue: var(--color-status-info);
-  --focus-blue: var(--color-status-info);
+  --focus-blue: #0c4a6e;
   --coral: var(--color-status-critical);
-  --coral-soft: #ffad9b;
-  --on-primary: var(--color-surface);
+  --coral-soft: #fecaca;
+  --on-primary: #ffffff;
   --error: var(--color-status-critical);
 
   /* Typography */
@@ -271,7 +271,7 @@ header {
 /* Switch & Controls */
 .view-switch {
   display: flex;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.05);
   padding: 2px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--color-border-glow);
