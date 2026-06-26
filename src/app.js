@@ -1,6 +1,6 @@
 /**
  * Thalassa Digital Twin Interface Controller
- * Manages native Leaflet map layers, telemetry sidebar, seasonal timeline, and live API sync.
+ * Manages native Leaflet map layers, telemetry sidebar, seasonal timeline, live API sync, scenario presets, and guided tours.
  */
 
 import { KERALA_COASTLINE, FISHING_HARBORS, CONSERVATION_ZONES } from './data/kerala_spatial.js';
@@ -54,6 +54,43 @@ let hoverOutline = null;
 let selectedOutline = null;
 let routePolyline = null;
 let vesselMarker = null;
+
+// Guided Tour state
+let tourActive = false;
+let tourStep = 0;
+
+const tourSteps = [
+  {
+    title: "Welcome to Thalassa 🌊",
+    desc: "This digital twin maps the Kerala coastline to balance sustainable fishing yields with marine reserve spawning bans. Let's take a 1-minute guided tour of its core capabilities.",
+    highlightId: "btn-start-tour",
+    position: "bottom"
+  },
+  {
+    title: "Dual Perspective Dashboards 🔀",
+    desc: "Switch between 'Fisherman Dashboard' (optimizing catches using sea surface temperature and chlorophyll indexes) and 'Conservation Dashboard' (restricting sensitive spawning zones). Try toggling this later!",
+    highlightId: "mode-fisherman",
+    position: "bottom"
+  },
+  {
+    title: "Debounced Hover Telemetry 📊",
+    desc: "Hovering over map grid cells queries Open-Meteo APIs for real-time wind and wave forecasts. Coordinate-rounded caching prevents API rate-limiting. Try hovering over cells!",
+    highlightId: "telemetry-card",
+    position: "left"
+  },
+  {
+    title: "Dynamic Seasonal Timeline 🗓️",
+    desc: "Scrub the calendar day slider or hit Play to animate monsoon seasonal variations, including chlorophyll upwellings and shifting conservation boundaries.",
+    highlightId: "timeline-panel",
+    position: "top"
+  },
+  {
+    title: "INCOIS ERDDAP Live-Sync 🛰️",
+    desc: "Click 'Trigger Live API Fetch' to request real-time satellite daily readings directly from federal servers via a CORS-bypassing Vite proxy.",
+    highlightId: "btn-fetch-live",
+    position: "bottom"
+  }
+];
 
 // 2D Array to store 432 cell layer references
 const cellLayers = Array(24).fill(null).map(() => Array(18).fill(null));
@@ -301,7 +338,7 @@ function updateGrid() {
     const newCell = gridData.find(c => c.row === selectedCell.row && c.col === selectedCell.col);
     if (newCell) {
       selectedCell = newCell;
-      optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+      optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
       updateTelemetryCard(selectedCell);
 
       const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
@@ -417,7 +454,7 @@ function updateMapLayers() {
       selectEl.value = port.id;
       selectedPort = port.id;
       if (selectedCell) {
-        optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+        optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
         updateRouteTelemetry();
       }
       updateGrid();
@@ -487,7 +524,7 @@ function setupEventListeners() {
   portSelect.addEventListener('change', (e) => {
     selectedPort = e.target.value;
     if (selectedCell) {
-      optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+      optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
     }
     updateGrid();
   });
@@ -506,6 +543,23 @@ function setupEventListeners() {
   // Live API Fetch trigger
   document.getElementById('btn-fetch-live').addEventListener('click', triggerLiveApiFetch);
 
+  // Preset Scenario selectors
+  document.getElementById('preset-monsoon').addEventListener('click', () => {
+    applyPresetScenario('monsoon');
+  });
+  document.getElementById('preset-winter').addEventListener('click', () => {
+    applyPresetScenario('winter');
+  });
+  document.getElementById('preset-live').addEventListener('click', () => {
+    applyPresetScenario('live');
+  });
+
+  // Guided Map Tour buttons
+  document.getElementById('btn-start-tour').addEventListener('click', startTour);
+  document.getElementById('tour-close-btn').addEventListener('click', endTour);
+  document.getElementById('tour-next-btn').addEventListener('click', nextTourStep);
+  document.getElementById('tour-prev-btn').addEventListener('click', prevTourStep);
+
   // Leaflet Map events
   map.on('mousemove', handleMapMouseMove);
   map.on('click', handleMapClick);
@@ -523,6 +577,162 @@ function setupEventListeners() {
       map.invalidateSize();
     }
   });
+}
+
+// Apply Scenario Preset configurations
+function applyPresetScenario(type) {
+  document.getElementById('preset-monsoon').classList.remove('active');
+  document.getElementById('preset-winter').classList.remove('active');
+  document.getElementById('preset-live').classList.remove('active');
+  
+  if (type === 'monsoon') {
+    document.getElementById('preset-monsoon').classList.add('active');
+    dayOfYear = 200; // July
+    document.getElementById('timeline-slider').value = dayOfYear;
+    updateTimelineLabel();
+    
+    // Switch to Fisherman Dashboard
+    switchPerspective('fisherman');
+    
+    // Enable SST + Chlorophyll Overlays
+    activeOverlays.sst = true;
+    activeOverlays.chl = true;
+    activeOverlays.currents = false;
+    activeOverlays.mpa = true;
+    
+    document.getElementById('layer-sst').classList.add('active');
+    document.getElementById('layer-chl').classList.add('active');
+    document.getElementById('layer-currents').classList.remove('active');
+    document.getElementById('layer-mpa').classList.add('active');
+
+    // Pan map to Kochi region
+    map.setView([10.0, 76.0], 9);
+    
+    showToast("Scenario: July Monsoon Upwelling. Plankton blooms visible.", "green");
+  } else if (type === 'winter') {
+    document.getElementById('preset-winter').classList.add('active');
+    dayOfYear = 350; // December
+    document.getElementById('timeline-slider').value = dayOfYear;
+    updateTimelineLabel();
+    
+    // Switch to Conservation Dashboard
+    switchPerspective('conservationist');
+    
+    // Enable MPA only
+    activeOverlays.sst = false;
+    activeOverlays.chl = false;
+    activeOverlays.currents = false;
+    activeOverlays.mpa = true;
+    
+    document.getElementById('layer-sst').classList.remove('active');
+    document.getElementById('layer-chl').classList.remove('active');
+    document.getElementById('layer-currents').classList.remove('active');
+    document.getElementById('layer-mpa').classList.add('active');
+
+    // Pan map to Kadalundi turtle nesting zone (Kozhikode region)
+    map.setView([11.15, 75.8], 9);
+    
+    showToast("Scenario: December Winter Spawning. Olive Ridley nesting protection active.", "green");
+  } else if (type === 'live') {
+    document.getElementById('preset-live').classList.add('active');
+    triggerLiveApiFetch();
+  }
+}
+
+// Guided Map Tour State Machine
+function startTour() {
+  tourActive = true;
+  tourStep = 0;
+  document.getElementById('tour-card').style.display = 'flex';
+  showTourStep();
+  showToast("Guided tour started. Follow the highlighted panels.");
+}
+
+function endTour() {
+  tourActive = false;
+  document.getElementById('tour-card').style.display = 'none';
+  
+  // Clear highlights
+  tourSteps.forEach(step => {
+    const el = document.getElementById(step.highlightId);
+    if (el) el.classList.remove('tour-highlight');
+  });
+  
+  showToast("Guided tour completed.");
+}
+
+function showTourStep() {
+  if (tourStep < 0 || tourStep >= tourSteps.length) {
+    endTour();
+    return;
+  }
+  
+  const step = tourSteps[tourStep];
+  
+  // Update Tour Card text content
+  document.getElementById('tour-step-label').textContent = `GUIDED TOUR: STEP ${tourStep + 1}/${tourSteps.length}`;
+  document.getElementById('tour-title').textContent = step.title;
+  document.getElementById('tour-description').textContent = step.desc;
+  
+  // Set button text states
+  document.getElementById('tour-prev-btn').disabled = (tourStep === 0);
+  document.getElementById('tour-next-btn').textContent = (tourStep === tourSteps.length - 1) ? "Finish" : "Next";
+  
+  // Manage CSS highlight classes
+  tourSteps.forEach((s, idx) => {
+    const el = document.getElementById(s.highlightId);
+    if (el) {
+      if (idx === tourStep) {
+        el.classList.add('tour-highlight');
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        el.classList.remove('tour-highlight');
+      }
+    }
+  });
+
+  // Reposition Tour Overlay relative to target panel
+  const targetEl = document.getElementById(step.highlightId);
+  const tourCard = document.getElementById('tour-card');
+  if (targetEl && tourCard) {
+    const rect = targetEl.getBoundingClientRect();
+    
+    if (step.position === 'bottom') {
+      tourCard.style.top = `${rect.bottom + window.scrollY + 12}px`;
+      tourCard.style.left = `${rect.left + window.scrollX}px`;
+      tourCard.style.bottom = 'auto';
+      tourCard.style.right = 'auto';
+    } else if (step.position === 'top') {
+      tourCard.style.top = 'auto';
+      tourCard.style.bottom = `${window.innerHeight - rect.top + 12}px`;
+      tourCard.style.left = `${rect.left + window.scrollX}px`;
+      tourCard.style.right = 'auto';
+    } else if (step.position === 'left') {
+      tourCard.style.top = `${rect.top + window.scrollY}px`;
+      tourCard.style.left = 'auto';
+      tourCard.style.right = `${window.innerWidth - rect.left + 12}px`;
+      tourCard.style.bottom = 'auto';
+    } else {
+      tourCard.style.bottom = '80px';
+      tourCard.style.left = '40px';
+      tourCard.style.top = 'auto';
+      tourCard.style.right = 'auto';
+    }
+  }
+}
+
+function nextTourStep() {
+  tourStep++;
+  if (tourStep >= tourSteps.length) {
+    endTour();
+  } else {
+    showTourStep();
+  }
+}
+
+function prevTourStep() {
+  tourStep--;
+  showTourStep();
 }
 
 // Toggle play timeline animation
@@ -657,7 +867,7 @@ function handleMapClick(e) {
     if (cell.isLand) return; // Skip land clicks
     
     selectedCell = cell;
-    optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+    optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
     vesselProgress = 0; // Reset transit animation
     
     document.getElementById('route-section').style.display = 'block';
@@ -675,7 +885,7 @@ function handleMapClick(e) {
       selectedOutline.addTo(map);
     }
 
-    // Set route line coords
+    // Set route coordinates
     const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
     routePolyline.setLatLngs(pathCoords);
     if (!map.hasLayer(routePolyline)) {
@@ -919,17 +1129,28 @@ function drawMiniTrendChart(cell) {
   }
 }
 
-// Update route text details
+// Update route text details with Standard vs Deflected Comparison
 function updateRouteTelemetry() {
   if (!optimizedRoute) return;
   const title = document.getElementById('route-title');
-  const dist = document.getElementById('route-distance');
-  const time = document.getElementById('route-time');
-
   const activePort = FISHING_HARBORS.find(h => h.id === selectedPort);
   title.textContent = `${activePort.name.split(' ')[0]} to Target Grid`;
-  dist.textContent = `${optimizedRoute.distanceKM} km`;
-  time.textContent = `${optimizedRoute.estTimeHours} hrs`;
+
+  // Standard Route (Non-Compliant) Metrics
+  document.getElementById('route-std-distance').textContent = `${optimizedRoute.stdDistanceKM} km`;
+  document.getElementById('route-std-time').textContent = `${optimizedRoute.stdTimeHours} hrs`;
+  const stdStatus = document.getElementById('route-std-status');
+  if (optimizedRoute.cutsSpawningBan) {
+    stdStatus.textContent = "❌ Cuts Spawning Ban";
+    stdStatus.className = "comparison-status status-error";
+  } else {
+    stdStatus.textContent = "✅ Eco-Compliant";
+    stdStatus.className = "comparison-status status-success";
+  }
+
+  // Thalassa Route (Optimized Compliant) Metrics
+  document.getElementById('route-opt-distance').textContent = `${optimizedRoute.distanceKM} km`;
+  document.getElementById('route-opt-time').textContent = `${optimizedRoute.estTimeHours} hrs`;
 }
 
 // Populate the sidebar list items dynamically
@@ -960,7 +1181,7 @@ function updateSidebarLists() {
 
       card.addEventListener('click', () => {
         selectedCell = zone;
-        optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+        optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
         vesselProgress = 0;
         document.getElementById('route-section').style.display = 'block';
         updateRouteTelemetry();

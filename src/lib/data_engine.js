@@ -246,21 +246,44 @@ export function generateDigitalTwinGrid(dayOfYear, liveData = null) {
  * Calculates the best fishing path from a port to high-scoring fishing zones,
  * avoiding restricted conservation zones.
  */
-export function calculateOptimizedRoute(portId, targetCell, grid) {
+export function calculateOptimizedRoute(portId, targetCell, grid, dayOfYear = 175) {
   const port = FISHING_HARBORS.find(h => h.id === portId);
   if (!port || !targetCell) return null;
 
-  // Simple A* search on grid or segment line rendering with avoidance
-  // For the MVP, we render a highly visual, realistic route path
-  // that bends around active restricted zones.
-  const path = [];
+  const currentMonth = Math.floor((dayOfYear / 365) * 12) + 1;
   const steps = 12;
   const startLat = port.lat;
   const startLng = port.lng;
   const endLat = targetCell.lat;
   const endLng = targetCell.lng;
 
-  // Add starting point
+  // 1. Calculate Standard Route (Straight Path & Ban Violations)
+  const stdPath = [];
+  let cutsSpawningBan = false;
+
+  for (let i = 0; i <= steps; i++) {
+    const ratio = i / steps;
+    const pt = {
+      lat: startLat + (endLat - startLat) * ratio,
+      lng: startLng + (endLng - startLng) * ratio
+    };
+    stdPath.push(pt);
+
+    // Check if this point crosses any active conservation ban
+    for (const zone of CONSERVATION_ZONES) {
+      if (zone.restrictedMonths.includes(currentMonth) && isPointInPolygon(pt, zone.polygon)) {
+        cutsSpawningBan = true;
+      }
+    }
+  }
+
+  let stdDist = 0;
+  for (let i = 0; i < stdPath.length - 1; i++) {
+    stdDist += getDistanceKM(stdPath[i].lat, stdPath[i].lng, stdPath[i+1].lat, stdPath[i+1].lng);
+  }
+
+  // 2. Calculate Thalassa Optimized Route (Deflecting around active spawning bans)
+  const path = [];
   path.push({ lat: startLat, lng: startLng });
 
   for (let i = 1; i < steps; i++) {
@@ -271,7 +294,7 @@ export function calculateOptimizedRoute(portId, targetCell, grid) {
     // Check if straight line cuts through any restricted zones
     // If so, apply a simple deflection vector perpendicular to the line
     for (const zone of CONSERVATION_ZONES) {
-      if (isPointInPolygon({ lat: intermediateLat, lng: intermediateLng }, zone.polygon)) {
+      if (zone.restrictedMonths.includes(currentMonth) && isPointInPolygon({ lat: intermediateLat, lng: intermediateLng }, zone.polygon)) {
         // Deflect westward (seaward) out of the zone
         intermediateLng -= 0.18; // Shift left
       }
@@ -294,7 +317,10 @@ export function calculateOptimizedRoute(portId, targetCell, grid) {
     targetCell: { lat: endLat, lng: endLng },
     path: path,
     distanceKM: Math.round(totalDist),
-    estTimeHours: parseFloat((totalDist / 18).toFixed(1)) // Estimating 18 km/h vessel speed
+    estTimeHours: parseFloat((totalDist / 18).toFixed(1)), // Estimating 18 km/h vessel speed
+    stdDistanceKM: Math.round(stdDist),
+    stdTimeHours: parseFloat((stdDist / 18).toFixed(1)),
+    cutsSpawningBan: cutsSpawningBan
   };
 }
 
