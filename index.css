@@ -223,12 +223,6 @@ header {
   overflow: hidden;
 }
 
-#map-canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
 /* --- Control Overlay HUD --- */
 .map-hud-top {
   position: absolute;
@@ -578,3 +572,51 @@ header {
 .status-dot.orange { background-color: #ef6c00; }
 .status-dot.red { background-color: #c62828; }
 .status-dot.blue { background-color: #1565c0; }
+
+/* --- Leaflet Custom Style Overrides (Cohere Aesthetic) --- */
+.leaflet-tooltip {
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(8px) !important;
+  border: 1px solid var(--hairline) !important;
+  border-radius: var(--radius-xs) !important;
+  box-shadow: var(--shadow-subtle) !important;
+  font-family: var(--font-body) !important;
+  font-size: 11px !important;
+  color: var(--ink) !important;
+  padding: 6px 10px !important;
+}
+
+.leaflet-tooltip::before {
+  display: none !important; /* Hide default pointer tip */
+}
+
+.leaflet-bar {
+  border: 1px solid var(--hairline) !important;
+  box-shadow: var(--shadow-subtle) !important;
+  border-radius: var(--radius-xs) !important;
+  overflow: hidden !important;
+}
+
+.leaflet-bar a {
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: var(--primary-color) !important;
+  border-bottom: 1px solid var(--hairline) !important;
+  transition: all 0.15s ease !important;
+}
+
+.leaflet-bar a:hover {
+  background: var(--soft-stone) !important;
+}
+
+.leaflet-control-scale-line {
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(4px) !important;
+  border: 1px solid var(--primary-color) !important;
+  border-top: none !important;
+  font-family: var(--font-mono) !important;
+  font-size: 9px !important;
+  color: var(--primary-color) !important;
+  text-transform: uppercase !important;
+  padding: 2px 5px !important;
+}
+

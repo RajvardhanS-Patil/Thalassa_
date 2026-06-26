@@ -1,6 +1,6 @@
 /**
  * Thalassa Digital Twin Interface Controller
- * Manages canvas visualization, user interactions, telemetry bindings, and API sync.
+ * Manages native Leaflet map layers, telemetry sidebar, seasonal timeline, and live API sync.
  */
 
 import { KERALA_COASTLINE, FISHING_HARBORS, CONSERVATION_ZONES } from './data/kerala_spatial.js';
@@ -18,6 +18,7 @@ let dayOfYear = 175; // Defaults to late June (Monsoon season)
 let liveData = null;
 let gridData = [];
 let selectedCell = null;
+let hoveredCell = null; // Currently hovered grid coordinate
 let optimizedRoute = null;
 let isPlaying = false;
 let playInterval = null;
@@ -35,42 +36,33 @@ const activeOverlays = {
   mpa: true
 };
 
-// Canvas references
-const canvas = document.getElementById('map-canvas');
-const ctx = canvas.getContext('2d');
-
 // Bounding box limits matching data_engine.js
 const LAT_MIN = 8.0;
 const LAT_MAX = 12.8;
 const LNG_MIN = 74.5;
 const LNG_MAX = 77.5;
 
-// Coordinate projection helper functions utilizing Leaflet Map API
-function projectX(lng) {
-  if (!map) return 0;
-  return map.latLngToContainerPoint([10.4, lng]).x;
-}
+// Leaflet Layer Groups
+let gridLayerGroup = null;
+let conservationLayerGroup = null;
+let portsLayerGroup = null;
+let currentsLayerGroup = null;
+let gridLinesLayerGroup = null;
 
-function projectY(lat) {
-  if (!map) return 0;
-  return map.latLngToContainerPoint([lat, 76.0]).y;
-}
+// Interactive Highlights & Vessel Layers
+let hoverOutline = null;
+let selectedOutline = null;
+let routePolyline = null;
+let vesselMarker = null;
 
-function unprojectX(x) {
-  if (!map) return LNG_MIN;
-  return map.containerPointToLatLng(L.point(x, 0)).lng;
-}
-
-function unprojectY(y) {
-  if (!map) return LAT_MAX;
-  return map.containerPointToLatLng(L.point(0, y)).lat;
-}
+// 2D Array to store 432 cell layer references
+const cellLayers = Array(24).fill(null).map(() => Array(18).fill(null));
 
 // Initialize Application
 function init() {
   // Initialize Leaflet Map
   map = L.map('map', {
-    zoomControl: false,
+    zoomControl: true, // Enable zoom buttons
     attributionControl: false
   }).setView([10.4, 76.0], 8);
 
@@ -79,19 +71,97 @@ function init() {
     minZoom: 6
   }).addTo(map);
 
+  // Add Leaflet's built-in scale bar in the bottom-left
+  L.control.scale({
+    position: 'bottomleft',
+    metric: true,
+    imperial: false
+  }).addTo(map);
+
   // Constrain the map bounds to the Kerala region
   map.setMaxBounds([
     [LAT_MIN - 1.0, LNG_MIN - 1.0],
     [LAT_MAX + 1.0, LNG_MAX + 1.0]
   ]);
 
+  // Instantiate Leaflet layer groups
+  gridLayerGroup = L.layerGroup().addTo(map);
+  conservationLayerGroup = L.layerGroup().addTo(map);
+  portsLayerGroup = L.layerGroup().addTo(map);
+  currentsLayerGroup = L.layerGroup().addTo(map);
+  gridLinesLayerGroup = L.layerGroup().addTo(map);
+
+  // Set up hover highlight layer
+  hoverOutline = L.rectangle([[0, 0], [0, 0]], {
+    color: 'rgba(24, 99, 220, 0.6)',
+    weight: 1.5,
+    fillColor: 'rgba(24, 99, 220, 0.05)',
+    fillOpacity: 0.1,
+    interactive: false
+  });
+
+  // Set up selection highlight layer
+  selectedOutline = L.rectangle([[0, 0], [0, 0]], {
+    color: 'var(--primary-color)',
+    weight: 2.5,
+    fillColor: 'rgba(0, 0, 0, 0)',
+    fillOpacity: 0,
+    interactive: false
+  });
+
+  // Set up vessel route path layer
+  routePolyline = L.polyline([], {
+    color: 'var(--action-blue)',
+    weight: 3.5,
+    lineCap: 'round',
+    lineJoin: 'round',
+    interactive: false
+  });
+
+  // Set up animated vessel marker
+  vesselMarker = L.circleMarker([0, 0], {
+    radius: 4.5,
+    color: 'white',
+    weight: 1.5,
+    fillColor: 'var(--action-blue)',
+    fillOpacity: 1,
+    interactive: false
+  });
+
+  // Create grid cell rectangles (24x18 = 432 cells)
+  const latStep = (LAT_MAX - LAT_MIN) / 24;
+  const lngStep = (LNG_MAX - LNG_MIN) / 18;
+  const canvasRenderer = L.canvas(); // High-performance canvas vector renderer
+
+  for (let r = 0; r < 24; r++) {
+    const lat = LAT_MAX - (r * latStep) - (latStep / 2);
+    for (let c = 0; c < 18; c++) {
+      const lng = LNG_MIN + (c * lngStep) + (lngStep / 2);
+      
+      const bounds = [
+        [lat - latStep / 2, lng - lngStep / 2],
+        [lat + latStep / 2, lng + lngStep / 2]
+      ];
+      
+      const rect = L.rectangle(bounds, {
+        renderer: canvasRenderer,
+        fillColor: 'rgba(0, 0, 0, 0)',
+        fillOpacity: 0,
+        color: 'rgba(255, 255, 255, 0.08)',
+        weight: 0.5,
+        interactive: false // Mousemove is handled at map level for fast spatial lookups
+      }).addTo(gridLayerGroup);
+      
+      cellLayers[r][c] = rect;
+    }
+  }
+
+  // Draw grid lines and axis ticks
+  initGridLines();
+
   setupEventListeners();
   updateGrid();
-  handleResize();
 
-  // Redraw canvas whenever Leaflet pans or zooms
-  map.on('zoom move', draw);
-  
   // Set default telemetry selection (Munambam harbor)
   const munambamPort = FISHING_HARBORS.find(h => h.id === 'munambam');
   if (munambamPort) {
@@ -113,26 +183,119 @@ function init() {
     updateTelemetryCard(defaultCell);
   }
 
-  showToast("Thalassa workspace initialized. Leaflet background loaded.");
+  // Populate floating HTML legend
+  updateMapLegend();
+
+  // Expose global variables to window for easy debugging and evaluation
+  window.map = map;
+  window.gridData = gridData;
+  window.selectedCell = selectedCell;
+  window.liveData = liveData;
+
+  showToast("Thalassa workspace initialized. Native Leaflet layers active.");
   
-  // Start the render loop
+  // Start the animation frame loop
   requestAnimationFrame(tick);
 }
 
 // Tick loop for real-time visual pulses and vessel transit animation
 function tick() {
   pulseState = (pulseState + 0.05) % (2 * Math.PI);
-  if (optimizedRoute) {
+  
+  if (optimizedRoute && vesselMarker && map.hasLayer(vesselMarker)) {
     vesselProgress = (vesselProgress + 0.002) % 1.0;
+    
+    // Animate vessel coordinates along route path
+    const vPos = getPositionAlongPath(optimizedRoute.path, vesselProgress);
+    if (vPos) {
+      vesselMarker.setLatLng([vPos.lat, vPos.lng]);
+    }
   }
-  draw();
+  
+  // Pulse selected port marker size
+  if (map && portsLayerGroup) {
+    portsLayerGroup.eachLayer(layer => {
+      const latlng = layer.getLatLng();
+      const port = FISHING_HARBORS.find(h => h.lat === latlng.lat && h.lng === latlng.lng);
+      if (port && port.id === selectedPort) {
+        layer.setRadius(5 + 3 * Math.sin(pulseState));
+      }
+    });
+  }
+
+  // Pulse conservation zones opacity
+  if (map && conservationLayerGroup && activeOverlays.mpa) {
+    const opacityScale = 0.5 + 0.2 * Math.sin(pulseState);
+    conservationLayerGroup.eachLayer(layer => {
+      layer.setStyle({
+        opacity: opacityScale
+      });
+    });
+  }
+
   requestAnimationFrame(tick);
+}
+
+// Initialize lat/lng coordinate lines and ticks in Leaflet
+function initGridLines() {
+  gridLinesLayerGroup.clearLayers();
+  
+  // Latitude grid lines
+  for (let lat = 8.5; lat < 12.8; lat += 1.0) {
+    const line = L.polyline([[lat, LNG_MIN], [lat, LNG_MAX]], {
+      color: 'rgba(0, 0, 0, 0.04)',
+      weight: 1,
+      interactive: false
+    });
+    line.addTo(gridLinesLayerGroup);
+    
+    // Add grid axis label
+    const labelMarker = L.marker([lat, LNG_MIN + 0.05], {
+      icon: L.divIcon({
+        className: 'grid-axis-label',
+        html: `<span style="font-family: var(--font-mono); font-size: 8px; color: rgba(23, 23, 28, 0.4);">${lat.toFixed(1)}°N</span>`,
+        iconSize: [40, 10],
+        iconAnchor: [0, 5]
+      }),
+      interactive: false
+    });
+    labelMarker.addTo(gridLinesLayerGroup);
+  }
+
+  // Longitude grid lines
+  for (let lng = 75.0; lng < 77.5; lng += 1.0) {
+    const line = L.polyline([[LAT_MIN, lng], [LAT_MAX, lng]], {
+      color: 'rgba(0, 0, 0, 0.04)',
+      weight: 1,
+      interactive: false
+    });
+    line.addTo(gridLinesLayerGroup);
+    
+    const labelMarker = L.marker([LAT_MIN + 0.05, lng], {
+      icon: L.divIcon({
+        className: 'grid-axis-label',
+        html: `<span style="font-family: var(--font-mono); font-size: 8px; color: rgba(23, 23, 28, 0.4);">${lng.toFixed(1)}°E</span>`,
+        iconSize: [40, 10],
+        iconAnchor: [20, 0]
+      }),
+      interactive: false
+    });
+    labelMarker.addTo(gridLinesLayerGroup);
+  }
 }
 
 // Regenerate grid matrices based on state
 function updateGrid() {
   gridData = generateDigitalTwinGrid(dayOfYear, liveData);
   
+  // Link gridData cell items to their respective layer shapes
+  gridData.forEach(cell => {
+    cell.rectLayer = cellLayers[cell.row][cell.col];
+  });
+
+  // Re-style grid cells and vector layers on Leaflet
+  updateMapLayers();
+
   // Recalculate route if destination exists
   if (selectedCell) {
     const newCell = gridData.find(c => c.row === selectedCell.row && c.col === selectedCell.col);
@@ -140,19 +303,176 @@ function updateGrid() {
       selectedCell = newCell;
       optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
       updateTelemetryCard(selectedCell);
+
+      const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
+      routePolyline.setLatLngs(pathCoords);
+      if (!map.hasLayer(routePolyline)) {
+        routePolyline.addTo(map);
+      }
+      if (!map.hasLayer(vesselMarker)) {
+        vesselMarker.addTo(map);
+      }
     }
+  } else {
+    if (map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+    if (map.hasLayer(vesselMarker)) map.removeLayer(vesselMarker);
   }
 
   updateSidebarLists();
 }
 
+// Redraw styles of native Leaflet vectors
+function updateMapLayers() {
+  const currentMonth = Math.floor((dayOfYear / 365) * 12) + 1;
+
+  // 1. Update Grid Cells
+  gridData.forEach(cell => {
+    const rect = cell.rectLayer;
+    if (!rect) return;
+
+    if (cell.isLand) {
+      rect.setStyle({
+        fillColor: 'rgba(0, 0, 0, 0)',
+        fillOpacity: 0,
+        color: 'rgba(0,0,0,0)',
+        weight: 0
+      });
+      return;
+    }
+
+    let fillColor = 'rgba(0, 0, 0, 0)';
+    let fillOpacity = 0;
+
+    if (currentMode === 'fisherman') {
+      if (activeOverlays.sst && !activeOverlays.chl) {
+        const alpha = Math.max(0.1, (cell.sst - 25) / 6.0);
+        fillColor = 'rgb(239, 108, 0)';
+        fillOpacity = alpha * 0.35;
+      } else if (activeOverlays.chl && !activeOverlays.sst) {
+        const alpha = Math.min(1.0, Math.max(0.1, cell.chlorophyll / 5.0));
+        fillColor = 'rgb(46, 125, 50)';
+        fillOpacity = alpha * 0.35;
+      } else if (activeOverlays.sst && activeOverlays.chl) {
+        const alpha = Math.max(0.1, cell.fishingScore / 100);
+        fillColor = 'rgb(24, 99, 220)';
+        fillOpacity = alpha * 0.35;
+      }
+    } else {
+      if (activeOverlays.mpa && cell.conservationScore > 30) {
+        const alpha = Math.max(0.15, cell.conservationScore / 100);
+        fillColor = cell.isRestrictedZone ? 'rgb(179, 0, 0)' : 'rgb(255, 119, 89)';
+        fillOpacity = cell.isRestrictedZone ? alpha * 0.45 : alpha * 0.35;
+      }
+    }
+
+    rect.setStyle({
+      fillColor: fillColor,
+      fillOpacity: fillOpacity,
+      color: fillColor !== 'rgba(0,0,0,0)' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0,0,0,0)',
+      weight: fillColor !== 'rgba(0,0,0,0)' ? 0.5 : 0
+    });
+  });
+
+  // 2. Update Conservation Zones
+  conservationLayerGroup.clearLayers();
+  if (activeOverlays.mpa) {
+    CONSERVATION_ZONES.forEach(zone => {
+      const latLngs = zone.polygon.map(pt => [pt.lat, pt.lng]);
+      const isActiveBan = zone.restrictedMonths.includes(currentMonth);
+      const color = zone.severityLevel === 'high' ? 'rgb(179, 0, 0)' : 'rgb(255, 119, 89)';
+      
+      const poly = L.polygon(latLngs, {
+        color: color,
+        weight: 1.5,
+        dashArray: '4, 4',
+        fillColor: color,
+        fillOpacity: isActiveBan ? 0.15 : 0.05,
+        interactive: true
+      });
+      
+      poly.bindTooltip(`<strong>${zone.name}</strong><br>${zone.description}`, { sticky: true });
+      poly.addTo(conservationLayerGroup);
+    });
+  }
+
+  // 3. Update Harbors/Ports
+  portsLayerGroup.clearLayers();
+  FISHING_HARBORS.forEach(port => {
+    const isSelected = port.id === selectedPort;
+    const color = isSelected ? 'var(--action-blue)' : 'var(--deep-green)';
+    
+    const marker = L.circleMarker([port.lat, port.lng], {
+      radius: isSelected ? 8 : 5,
+      color: 'var(--canvas)',
+      weight: 1.5,
+      fillColor: color,
+      fillOpacity: 1,
+      interactive: true
+    });
+
+    marker.bindTooltip(`<strong>${port.name}</strong><br>District: ${port.district}<br>Active Vessels: ${port.activeVessels}`, { sticky: true });
+    
+    marker.on('click', () => {
+      const selectEl = document.getElementById('port-selector');
+      selectEl.value = port.id;
+      selectedPort = port.id;
+      if (selectedCell) {
+        optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+        updateRouteTelemetry();
+      }
+      updateGrid();
+    });
+
+    marker.addTo(portsLayerGroup);
+  });
+
+  // 4. Update Currents Vectors
+  currentsLayerGroup.clearLayers();
+  if (activeOverlays.currents) {
+    gridData.forEach(cell => {
+      if (cell.isLand) return;
+      
+      const start = [cell.lat, cell.lng];
+      
+      // Calculate end point of current vector based on speed and dir
+      const scale = 0.05 * cell.currentSpeed;
+      const angleRad = (cell.currentDir * Math.PI) / 180;
+      const end = [
+        cell.lat - Math.cos(angleRad) * scale,
+        cell.lng + Math.sin(angleRad) * scale
+      ];
+      
+      const line = L.polyline([start, end], {
+        color: 'rgba(24, 99, 220, 0.45)',
+        weight: 1.2,
+        interactive: false
+      });
+      line.addTo(currentsLayerGroup);
+      
+      // Draw arrowhead by adding short lines
+      const headlen = scale * 0.25;
+      const leftArrow = [
+        end[0] + Math.cos(angleRad - Math.PI / 6) * headlen,
+        end[1] - Math.sin(angleRad - Math.PI / 6) * headlen
+      ];
+      const rightArrow = [
+        end[0] + Math.cos(angleRad + Math.PI / 6) * headlen,
+        end[1] - Math.sin(angleRad + Math.PI / 6) * headlen
+      ];
+      
+      L.polyline([end, leftArrow], { color: 'rgba(24, 99, 220, 0.45)', weight: 1.2 }).addTo(currentsLayerGroup);
+      L.polyline([end, rightArrow], { color: 'rgba(24, 99, 220, 0.45)', weight: 1.2 }).addTo(currentsLayerGroup);
+    });
+  }
+}
+
 // Setup Interaction Listeners
 function setupEventListeners() {
   // Mode toggles
-  document.getElementById('mode-fisherman').addEventListener('click', (e) => {
+  document.getElementById('mode-fisherman').addEventListener('click', () => {
     switchPerspective('fisherman');
   });
-  document.getElementById('mode-conservationist').addEventListener('click', (e) => {
+  document.getElementById('mode-conservationist').addEventListener('click', () => {
     switchPerspective('conservationist');
   });
 
@@ -169,7 +489,7 @@ function setupEventListeners() {
     if (selectedCell) {
       optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
     }
-    updateSidebarLists();
+    updateGrid();
   });
 
   // Timeline slider
@@ -190,7 +510,19 @@ function setupEventListeners() {
   map.on('mousemove', handleMapMouseMove);
   map.on('click', handleMapClick);
 
-  window.addEventListener('resize', handleResize);
+  map.on('mouseout', () => {
+    hoveredCell = null;
+    lastHoveredCell = null;
+    if (map.hasLayer(hoverOutline)) {
+      map.removeLayer(hoverOutline);
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    if (map) {
+      map.invalidateSize();
+    }
+  });
 }
 
 // Toggle play timeline animation
@@ -255,28 +587,8 @@ function setupLayerToggle(elementId, key) {
     } else {
       btn.classList.remove('active');
     }
-  });
-}
-
-// Handle Canvas Resize
-function handleResize() {
-  if (map) {
-    map.invalidateSize();
-  }
-  const parent = canvas.parentElement;
-  canvas.width = parent.clientWidth;
-  canvas.height = parent.clientHeight;
-}
-
-// Retrieve grid cell coordinates based on mouse position
-function getCellFromCoords(x, y) {
-  const lng = unprojectX(x, canvas.width);
-  const lat = unprojectY(y, canvas.height);
-
-  return gridData.find(cell => {
-    const latStep = (LAT_MAX - LAT_MIN) / 24; // Grid rows
-    const lngStep = (LNG_MAX - LNG_MIN) / 18; // Grid cols
-    return Math.abs(cell.lat - lat) <= (latStep / 2) && Math.abs(cell.lng - lng) <= (lngStep / 2);
+    updateGrid();
+    updateMapLegend();
   });
 }
 
@@ -294,8 +606,21 @@ function handleMapMouseMove(e) {
   
   if (cell !== lastHoveredCell) {
     lastHoveredCell = cell;
+    hoveredCell = cell;
     if (cell) {
       updateTelemetryCard(cell);
+      
+      // Update hover outline rectangle bounds
+      const latStep = (LAT_MAX - LAT_MIN) / 24;
+      const lngStep = (LNG_MAX - LNG_MIN) / 18;
+      const bounds = [
+        [cell.lat - latStep/2, cell.lng - lngStep/2],
+        [cell.lat + latStep/2, cell.lng + lngStep/2]
+      ];
+      hoverOutline.setBounds(bounds);
+      if (!map.hasLayer(hoverOutline)) {
+        hoverOutline.addTo(map);
+      }
       
       if (mouseMoveDebounceTimer) {
         clearTimeout(mouseMoveDebounceTimer);
@@ -308,6 +633,10 @@ function handleMapMouseMove(e) {
             fetchAndCacheForecast(cell.lat, cell.lng, cacheKey);
           }, 350);
         }
+      }
+    } else {
+      if (map.hasLayer(hoverOutline)) {
+        map.removeLayer(hoverOutline);
       }
     }
   }
@@ -334,6 +663,29 @@ function handleMapClick(e) {
     document.getElementById('route-section').style.display = 'block';
     updateRouteTelemetry();
     
+    // Update selected outline bounds
+    const latStep = (LAT_MAX - LAT_MIN) / 24;
+    const lngStep = (LNG_MAX - LNG_MIN) / 18;
+    const bounds = [
+      [cell.lat - latStep/2, cell.lng - lngStep/2],
+      [cell.lat + latStep/2, cell.lng + lngStep/2]
+    ];
+    selectedOutline.setBounds(bounds);
+    if (!map.hasLayer(selectedOutline)) {
+      selectedOutline.addTo(map);
+    }
+
+    // Set route line coords
+    const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
+    routePolyline.setLatLngs(pathCoords);
+    if (!map.hasLayer(routePolyline)) {
+      routePolyline.addTo(map);
+    }
+    
+    if (!map.hasLayer(vesselMarker)) {
+      vesselMarker.addTo(map);
+    }
+
     updateGrid();
     showToast(`Target coordinate locked at: ${cell.lat.toFixed(3)}°N, ${cell.lng.toFixed(3)}°E`);
   }
@@ -414,21 +766,13 @@ function switchPerspective(mode) {
   optimizedRoute = null;
   document.getElementById('route-section').style.display = 'none';
 
+  if (map.hasLayer(selectedOutline)) map.removeLayer(selectedOutline);
+  if (map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+  if (map.hasLayer(vesselMarker)) map.removeLayer(vesselMarker);
+
   updateGrid();
+  updateMapLegend();
   showToast(`Switched perspective: ${mode.toUpperCase()} mode.`);
-}
-
-// Draw cell selection highlight box
-function drawCellHighlight(cell, strokeStyle = 'var(--primary-color)', lineWidth = 3) {
-  const latStep = (LAT_MAX - LAT_MIN) / 24;
-  const lngStep = (LNG_MAX - LNG_MIN) / 18;
-
-  const topLeft = map.latLngToContainerPoint([cell.lat + latStep / 2, cell.lng - lngStep / 2]);
-  const bottomRight = map.latLngToContainerPoint([cell.lat - latStep / 2, cell.lng + lngStep / 2]);
-
-  ctx.strokeStyle = strokeStyle;
-  ctx.lineWidth = lineWidth;
-  ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
 }
 
 // Update telemetry details panel
@@ -508,7 +852,7 @@ async function fetchAndCacheForecast(lat, lng, cacheKey) {
   }
 }
 
-// Draw mini historical sparkline for hovered grid coordinate
+// Draw mini historical sparkline for hovered grid coordinate (sidebar canvas)
 function drawMiniTrendChart(cell) {
   const chartCanvas = document.getElementById('mini-trend-chart');
   if (!chartCanvas) return;
@@ -621,6 +965,30 @@ function updateSidebarLists() {
         document.getElementById('route-section').style.display = 'block';
         updateRouteTelemetry();
         updateTelemetryCard(zone);
+        
+        // Update selected outline bounds
+        const latStep = (LAT_MAX - LAT_MIN) / 24;
+        const lngStep = (LNG_MAX - LNG_MIN) / 18;
+        const bounds = [
+          [zone.lat - latStep/2, zone.lng - lngStep/2],
+          [zone.lat + latStep/2, zone.lng + lngStep/2]
+        ];
+        selectedOutline.setBounds(bounds);
+        if (!map.hasLayer(selectedOutline)) {
+          selectedOutline.addTo(map);
+        }
+
+        // Set route coordinates
+        const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
+        routePolyline.setLatLngs(pathCoords);
+        if (!map.hasLayer(routePolyline)) {
+          routePolyline.addTo(map);
+        }
+        if (!map.hasLayer(vesselMarker)) {
+          vesselMarker.addTo(map);
+        }
+
+        updateGrid();
         showToast(`Navigating to Zone #${idx + 1}`);
       });
 
@@ -655,219 +1023,18 @@ function updateSidebarLists() {
         optimizedRoute = null;
         document.getElementById('route-section').style.display = 'none';
         updateTelemetryCard(zone);
+        
+        // Remove selection outlines and routes since it's a sanctuary inspection
+        if (map.hasLayer(selectedOutline)) map.removeLayer(selectedOutline);
+        if (map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+        if (map.hasLayer(vesselMarker)) map.removeLayer(vesselMarker);
+        
         showToast(`Inspecting ecosystem bounds of: ${zone.activeMPA ? zone.activeMPA.name : 'Sensitive Cell'}`);
       });
 
       container.appendChild(card);
     });
   }
-}
-
-// Master Canvas Rendering Call
-function draw() {
-  const w = canvas.width;
-  const h = canvas.height;
-  if (w === 0 || h === 0) return;
-  
-  ctx.clearRect(0, 0, w, h);
-
-  // 1. Draw Grid Cells
-  const latStep = (LAT_MAX - LAT_MIN) / 24;
-  const lngStep = (LNG_MAX - LNG_MIN) / 18;
-
-  gridData.forEach(cell => {
-    if (cell.isLand) {
-      // Skip drawing land cells completely to reveal the Leaflet map background
-      return;
-    }
-
-    const topLeft = map.latLngToContainerPoint([cell.lat + latStep / 2, cell.lng - lngStep / 2]);
-    const bottomRight = map.latLngToContainerPoint([cell.lat - latStep / 2, cell.lng + lngStep / 2]);
-    const x = topLeft.x;
-    const y = topLeft.y;
-    const cellW = bottomRight.x - topLeft.x;
-    const cellH = bottomRight.y - topLeft.y;
-
-    let colorString = 'rgba(255, 255, 255, 1)';
-    
-    if (currentMode === 'fisherman') {
-      if (activeOverlays.sst && !activeOverlays.chl) {
-        const alpha = Math.max(0.1, (cell.sst - 25) / 6.0);
-        colorString = `rgba(239, 108, 0, ${alpha})`;
-      } else if (activeOverlays.chl && !activeOverlays.sst) {
-        const alpha = Math.min(1.0, Math.max(0.1, cell.chlorophyll / 5.0));
-        colorString = `rgba(46, 125, 50, ${alpha})`;
-      } else if (activeOverlays.sst && activeOverlays.chl) {
-        const alpha = Math.max(0.1, cell.fishingScore / 100);
-        colorString = `rgba(24, 99, 220, ${alpha})`;
-      } else {
-        colorString = '#f5f7f9';
-      }
-    } else {
-      if (activeOverlays.mpa && cell.conservationScore > 30) {
-        const alpha = Math.max(0.15, cell.conservationScore / 100);
-        colorString = cell.isRestrictedZone
-          ? `rgba(179, 0, 0, ${alpha})`
-          : `rgba(255, 119, 89, ${alpha})`;
-      } else {
-        colorString = '#f5f7f9';
-      }
-    }
-
-    ctx.fillStyle = colorString;
-    ctx.fillRect(x, y, cellW + 0.5, cellH + 0.5);
-
-    if (activeOverlays.currents && !cell.isLand) {
-      drawCurrentVector(cell, cellW, cellH, w, h);
-    }
-  });
-
-  // 2. Draw Latitude / Longitude grid lines and axis tags
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.04)';
-  ctx.lineWidth = 1;
-  ctx.fillStyle = 'rgba(23, 23, 28, 0.4)';
-  ctx.font = '8px var(--font-mono)';
-
-  // Draw Latitude Grid Lines
-  for (let lat = 8.5; lat < 12.8; lat += 1.0) {
-    const y = projectY(lat, h);
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-    ctx.fillText(`${lat.toFixed(1)}°N`, 8, y - 4);
-  }
-
-  // Draw Longitude Grid Lines
-  for (let lng = 75.0; lng < 77.5; lng += 1.0) {
-    const x = projectX(lng, w);
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
-    ctx.stroke();
-    ctx.fillText(`${lng.toFixed(1)}°E`, x + 4, h - 8);
-  }
-
-  // 3. Draw Dotted Conservation Zones
-  if (activeOverlays.mpa) {
-    CONSERVATION_ZONES.forEach(zone => {
-      ctx.beginPath();
-      zone.polygon.forEach((pt, idx) => {
-        const x = projectX(pt.lng, w);
-        const y = projectY(pt.lat, h);
-        if (idx === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.closePath();
-      
-      const pulseColor = zone.severityLevel === 'high' 
-        ? `rgba(179, 0, 0, ${0.6 + 0.2 * Math.sin(pulseState)})`
-        : `rgba(255, 119, 89, ${0.6 + 0.2 * Math.sin(pulseState)})`;
-
-      ctx.strokeStyle = pulseColor;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    });
-  }
-
-  // 4. Draw Coastline Path (Thick Editorial Black Line)
-  ctx.beginPath();
-  KERALA_COASTLINE.forEach((pt, idx) => {
-    const x = projectX(pt.lng, w);
-    const y = projectY(pt.lat, h);
-    if (idx === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.strokeStyle = 'var(--primary-color)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  // Draw anchors nodes along coastline
-  KERALA_COASTLINE.forEach(pt => {
-    const x = projectX(pt.lng, w);
-    const y = projectY(pt.lat, h);
-    ctx.beginPath();
-    ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
-    ctx.fillStyle = 'var(--canvas)';
-    ctx.strokeStyle = 'var(--primary-color)';
-    ctx.lineWidth = 1.5;
-    ctx.fill();
-    ctx.stroke();
-  });
-
-  // 5. Draw Anchor Ports/Harbors
-  FISHING_HARBORS.forEach(port => {
-    const x = projectX(port.lng, w);
-    const y = projectY(port.lat, h);
-
-    // Glowing active ports pulses
-    if (port.id === selectedPort) {
-      ctx.beginPath();
-      ctx.arc(x, y, 7 + 4 * Math.sin(pulseState), 0, 2 * Math.PI);
-      ctx.fillStyle = 'rgba(24, 99, 220, 0.15)';
-      ctx.fill();
-    }
-
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, 2 * Math.PI);
-    ctx.fillStyle = port.id === selectedPort ? 'var(--action-blue)' : 'var(--deep-green)';
-    ctx.strokeStyle = 'var(--canvas)';
-    ctx.lineWidth = 1.5;
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = 'var(--cohere-black)';
-    ctx.font = 'bold 9px var(--font-mono)';
-    ctx.fillText(port.name.split(' ')[0], x + 9, y + 3);
-  });
-
-  // 6. Draw Selected Cell hover highlight
-  if (selectedCell) {
-    drawCellHighlight(selectedCell, 'var(--primary-color)', 2.5);
-  }
-
-  // 7. Draw Route and Animated Transit Vessel
-  if (currentMode === 'fisherman' && optimizedRoute) {
-    ctx.beginPath();
-    optimizedRoute.path.forEach((pt, idx) => {
-      const x = projectX(pt.lng, w);
-      const y = projectY(pt.lat, h);
-      if (idx === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.strokeStyle = 'var(--action-blue)';
-    ctx.lineWidth = 3.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-
-    // Interpolate vessel location along path
-    const vPos = getPositionAlongPath(optimizedRoute.path, vesselProgress);
-    if (vPos) {
-      const vx = projectX(vPos.lng, w);
-      const vy = projectY(vPos.lat, h);
-
-      // Pulse ring
-      ctx.beginPath();
-      ctx.arc(vx, vy, 6 + 3 * Math.sin(pulseState * 2), 0, 2 * Math.PI);
-      ctx.fillStyle = 'rgba(24, 99, 220, 0.2)';
-      ctx.fill();
-
-      // Main dot
-      ctx.beginPath();
-      ctx.arc(vx, vy, 4.5, 0, 2 * Math.PI);
-      ctx.fillStyle = 'var(--action-blue)';
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 1.5;
-      ctx.fill();
-      ctx.stroke();
-    }
-  }
-
-  // Draw Legend and Scale overlay
-  drawMapLegendAndScale();
 }
 
 // Calculate position along path at fraction p (0-1)
@@ -887,33 +1054,6 @@ function getPositionAlongPath(path, p) {
     lat: p1.lat + (p2.lat - p1.lat) * t,
     lng: p1.lng + (p2.lng - p1.lng) * t
   };
-}
-
-// Draw current vectors
-function drawCurrentVector(cell, cellW, cellH, w, h) {
-  const x = projectX(cell.lng, w);
-  const y = projectY(cell.lat, h);
-  
-  const length = Math.max(3.5, cell.currentSpeed * 10);
-  const angleRad = (cell.currentDir * Math.PI) / 180;
-
-  const dx = Math.sin(angleRad) * length;
-  const dy = -Math.cos(angleRad) * length;
-
-  ctx.beginPath();
-  ctx.moveTo(x - dx / 2, y - dy / 2);
-  ctx.lineTo(x + dx / 2, y + dy / 2);
-  ctx.strokeStyle = 'rgba(24, 99, 220, 0.45)';
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-
-  const headlen = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(x + dx / 2, y + dy / 2);
-  ctx.lineTo(x + dx / 2 - headlen * Math.sin(angleRad - Math.PI / 6), y + dy / 2 + headlen * Math.cos(angleRad - Math.PI / 6));
-  ctx.lineTo(x + dx / 2 - headlen * Math.sin(angleRad + Math.PI / 6), y + dy / 2 + headlen * Math.cos(angleRad + Math.PI / 6));
-  ctx.fillStyle = 'rgba(24, 99, 220, 0.45)';
-  ctx.fill();
 }
 
 // Toast alerts message manager
@@ -947,132 +1087,70 @@ function showToast(message, type = 'default') {
 // Trigger initial build setup on window load
 window.addEventListener('load', init);
 
-// Map Legend & Scale Bar Drawing helper functions
-function drawMapLegendAndScale() {
-  const w = canvas.width;
-  const h = canvas.height;
-  if (w === 0 || h === 0) return;
-  
-  // 1. Draw Distance Scale Bar
-  const scaleBarKm = 50;
-  const scaleBarWidthPx = (scaleBarKm / 327) * w;
-  const startX = 20;
-  const startY = h - 35;
-  
-  ctx.strokeStyle = 'var(--primary-color)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(startX, startY);
-  ctx.lineTo(startX + scaleBarWidthPx, startY);
-  ctx.moveTo(startX, startY - 4);
-  ctx.lineTo(startX, startY + 4);
-  ctx.moveTo(startX + scaleBarWidthPx, startY - 4);
-  ctx.lineTo(startX + scaleBarWidthPx, startY + 4);
-  ctx.stroke();
-  
-  ctx.fillStyle = 'var(--primary-color)';
-  ctx.font = 'bold 9px var(--font-mono)';
-  ctx.fillText(`${scaleBarKm} km`, startX + scaleBarWidthPx + 8, startY + 3);
-  
-  // 2. Draw Map Legend Card
-  const legendX = 20;
-  const legendY = h - 175;
-  const legendW = 180;
-  const legendH = 120;
-  
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-  ctx.strokeStyle = 'var(--hairline)';
-  ctx.lineWidth = 1;
-  drawRoundedRect(ctx, legendX, legendY, legendW, legendH, 6);
-  ctx.fill();
-  ctx.stroke();
-  
-  ctx.fillStyle = 'var(--primary-color)';
-  ctx.font = 'bold 9px var(--font-mono)';
-  ctx.fillText(currentMode === 'fisherman' ? 'YIELD ANALYSIS LEGEND' : 'CONSERVATION LEGEND', legendX + 12, legendY + 20);
-  
-  ctx.strokeStyle = 'var(--hairline)';
-  ctx.beginPath();
-  ctx.moveTo(legendX + 12, legendY + 28);
-  ctx.lineTo(legendX + legendW - 12, legendY + 28);
-  ctx.stroke();
-  
-  ctx.font = '9px var(--font-body)';
+// Floating HTML Map Legend Population functions
+function updateMapLegend() {
+  const title = document.getElementById('legend-title');
+  const itemsContainer = document.getElementById('legend-items');
+  if (!title || !itemsContainer) return;
+
+  itemsContainer.innerHTML = '';
+
   if (currentMode === 'fisherman') {
+    title.textContent = 'YIELD ANALYSIS LEGEND';
+
     if (activeOverlays.sst && !activeOverlays.chl) {
-      drawColorBox(legendX + 12, legendY + 38, 'rgba(239, 108, 0, 0.8)', 'Sea Temp (Warm/High)');
-      drawColorBox(legendX + 12, legendY + 54, 'rgba(239, 108, 0, 0.2)', 'Sea Temp (Cool/Low)');
+      addLegendItem('rgba(239, 108, 0, 0.35)', 'Sea Temp (Warm/High)');
+      addLegendItem('rgba(239, 108, 0, 0.1)', 'Sea Temp (Cool/Low)');
     } else if (activeOverlays.chl && !activeOverlays.sst) {
-      drawColorBox(legendX + 12, legendY + 38, 'rgba(46, 125, 50, 0.8)', 'Chlorophyll (High Food)');
-      drawColorBox(legendX + 12, legendY + 54, 'rgba(46, 125, 50, 0.2)', 'Chlorophyll (Low Food)');
+      addLegendItem('rgba(46, 125, 50, 0.35)', 'Chlorophyll (High Food)');
+      addLegendItem('rgba(46, 125, 50, 0.1)', 'Chlorophyll (Low Food)');
+    } else if (activeOverlays.sst && activeOverlays.chl) {
+      addLegendItem('rgba(24, 99, 220, 0.35)', 'Optimal Yield (High)');
+      addLegendItem('rgba(24, 99, 220, 0.1)', 'Optimal Yield (Low)');
     } else {
-      drawColorBox(legendX + 12, legendY + 38, 'rgba(24, 99, 220, 0.8)', 'Optimal Yield (High)');
-      drawColorBox(legendX + 12, legendY + 54, 'rgba(24, 99, 220, 0.2)', 'Optimal Yield (Low)');
+      addLegendItem('rgba(0,0,0,0)', 'No Overlay Active (Map View)');
     }
-    drawColorBox(legendX + 12, legendY + 74, 'rgba(24, 99, 220, 0.45)', 'Ocean Currents Vector', true);
-    drawColorCircle(legendX + 12, legendY + 94, 'var(--action-blue)', 'Anchor Fishing Harbors');
+
+    if (activeOverlays.currents) {
+      addLegendItem('rgba(24, 99, 220, 0.55)', 'Currents Vector Arrow', 'arrow');
+    }
+    addLegendItem('var(--action-blue)', 'Anchor Fishing Harbors', 'circle');
   } else {
-    drawColorBox(legendX + 12, legendY + 38, 'rgba(179, 0, 0, 0.7)', 'Active Spawning Ban');
-    drawColorBox(legendX + 12, legendY + 54, 'rgba(255, 119, 89, 0.7)', 'Marine Reserve Buffer');
-    drawColorBox(legendX + 12, legendY + 74, 'rgba(179, 0, 0, 0.6)', 'Seasonal Spawning Line', false, true);
-    drawColorCircle(legendX + 12, legendY + 94, 'var(--deep-green)', 'Protected Harbors');
+    title.textContent = 'CONSERVATION LEGEND';
+    addLegendItem('rgba(179, 0, 0, 0.45)', 'Active Spawning Ban');
+    addLegendItem('rgba(255, 119, 89, 0.35)', 'Marine Reserve Buffer');
+    addLegendItem('rgba(179, 0, 0, 0.6)', 'Seasonal Spawning Line', 'dotted-line');
+    addLegendItem('var(--deep-green)', 'Protected Harbors', 'circle');
   }
 }
 
-function drawRoundedRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
-}
+function addLegendItem(color, text, type = 'box') {
+  const container = document.getElementById('legend-items');
+  const item = document.createElement('div');
+  item.style.display = 'flex';
+  item.style.alignItems = 'center';
+  item.style.gap = '8px';
+  item.style.fontSize = '11px';
 
-function drawColorBox(x, y, color, text, isArrow = false, isDottedLine = false) {
-  if (isArrow) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(x, y + 4);
-    ctx.lineTo(x + 12, y + 4);
-    ctx.moveTo(x + 9, y + 2);
-    ctx.lineTo(x + 12, y + 4);
-    ctx.lineTo(x + 9, y + 6);
-    ctx.stroke();
-  } else if (isDottedLine) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([2, 2]);
-    ctx.beginPath();
-    ctx.moveTo(x, y + 4);
-    ctx.lineTo(x + 12, y + 4);
-    ctx.stroke();
-    ctx.setLineDash([]);
+  let visualHTML = '';
+  if (type === 'circle') {
+    visualHTML = `<div style="width: 8px; height: 8px; border-radius: 50%; background: ${color}; border: 1px solid white;"></div>`;
+  } else if (type === 'arrow') {
+    visualHTML = `
+      <div style="width: 12px; height: 8px; display: flex; align-items: center; justify-content: center;">
+        <svg width="12" height="6" viewBox="0 0 12 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M0 3H10M10 3L8 1M10 3L8 5" stroke="${color}" stroke-width="1.2"/>
+        </svg>
+      </div>`;
+  } else if (type === 'dotted-line') {
+    visualHTML = `<div style="width: 12px; height: 0px; border-top: 1.5px dashed ${color};"></div>`;
   } else {
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, 12, 8);
-    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
-    ctx.strokeRect(x, y, 12, 8);
+    visualHTML = `<div style="width: 12px; height: 8px; background: ${color}; border: 1px solid rgba(0,0,0,0.1); border-radius: var(--radius-xs);"></div>`;
   }
-  
-  ctx.fillStyle = 'var(--ink)';
-  ctx.fillText(text, x + 20, y + 7);
-}
 
-function drawColorCircle(x, y, color, text) {
-  ctx.beginPath();
-  ctx.arc(x + 6, y + 4, 4, 0, 2 * Math.PI);
-  ctx.fillStyle = color;
-  ctx.strokeStyle = 'white';
-  ctx.lineWidth = 1;
-  ctx.fill();
-  ctx.stroke();
-  
-  ctx.fillStyle = 'var(--ink)';
-  ctx.fillText(text, x + 20, y + 7);
+  item.innerHTML = `
+    ${visualHTML}
+    <span style="color: var(--ink);">${text}</span>
+  `;
+  container.appendChild(item);
 }
