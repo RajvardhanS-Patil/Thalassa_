@@ -4,7 +4,7 @@
  */
 
 import { KERALA_COASTLINE, FISHING_HARBORS, CONSERVATION_ZONES } from './data/kerala_spatial.js';
-import { generateDigitalTwinGrid, calculateOptimizedRoute } from './lib/data_engine.js';
+import { generateDigitalTwinGrid, calculateOptimizedRoute, projectTelemetryToPercent } from './lib/data_engine.js';
 import { fetchIncoisErddapData, fetchOpenMeteoForecast } from './lib/api_client.js';
 
 // Open-Meteo Cache & Debounce Globals
@@ -19,6 +19,7 @@ let liveData = null;
 let gridData = [];
 let selectedCell = null;
 let hoveredCell = null; // Currently hovered grid coordinate
+let displayedTelemetryCell = null;
 let optimizedRoute = null;
 let isPlaying = false;
 let playInterval = null;
@@ -217,7 +218,7 @@ function init() {
       sensitivityReasons: ['Estuary nutrient zone'],
       favorabilityReasons: ['Optimal temperature', 'Strong food index']
     };
-    updateTelemetryCard(defaultCell);
+    updateTelemetryCard(defaultCell, true);
   }
 
   // Populate floating HTML legend
@@ -339,7 +340,7 @@ function updateGrid() {
     if (newCell) {
       selectedCell = newCell;
       optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
-      updateTelemetryCard(selectedCell);
+      updateTelemetryCard(selectedCell, true);
 
       const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
       routePolyline.setLatLngs(pathCoords);
@@ -428,6 +429,8 @@ function updateMapLayers() {
       });
       
       poly.bindTooltip(`<strong>${zone.name}</strong><br>${zone.description}`, { sticky: true });
+      poly.on('mousemove', handleMapMouseMove);
+      poly.on('click', handleMapClick);
       poly.addTo(conservationLayerGroup);
     });
   }
@@ -569,6 +572,29 @@ function setupEventListeners() {
     lastHoveredCell = null;
     if (map.hasLayer(hoverOutline)) {
       map.removeLayer(hoverOutline);
+    }
+    if (selectedCell) {
+      updateTelemetryCard(selectedCell, true);
+    } else {
+      const munambamPort = FISHING_HARBORS.find(h => h.id === 'munambam');
+      if (munambamPort) {
+        const defaultCell = gridData.find(c => c.lat === munambamPort.lat && c.lng === munambamPort.lng) || {
+          lat: munambamPort.lat,
+          lng: munambamPort.lng,
+          isLand: false,
+          isDeepOcean: false,
+          sst: 28.1,
+          chlorophyll: 1.8,
+          currentSpeed: 0.5,
+          currentDir: 180,
+          fishingScore: 82,
+          conservationScore: 35,
+          minDistanceToCoast: 12,
+          sensitivityReasons: ['Estuary nutrient zone'],
+          favorabilityReasons: ['Optimal temperature', 'Strong food index']
+        };
+        updateTelemetryCard(defaultCell, true);
+      }
     }
   });
 
@@ -840,7 +866,7 @@ function handleMapMouseMove(e) {
         const cacheKey = `${cell.lat.toFixed(1)}_${cell.lng.toFixed(1)}`;
         if (!openMeteoCache.has(cacheKey)) {
           mouseMoveDebounceTimer = setTimeout(() => {
-            fetchAndCacheForecast(cell.lat, cell.lng, cacheKey);
+            fetchAndCacheForecast(cell);
           }, 350);
         }
       }
@@ -1003,7 +1029,8 @@ function switchPerspective(mode) {
 }
 
 // Update telemetry details panel
-function updateTelemetryCard(cell) {
+function updateTelemetryCard(cell, forceImmediateFetch = false) {
+  displayedTelemetryCell = cell;
   document.getElementById('telemetry-coords').textContent = `${cell.lat.toFixed(3)}°N, ${cell.lng.toFixed(3)}°E`;
   document.getElementById('cell-type-badge').textContent = cell.isLand ? 'LAND' : (cell.isDeepOcean ? 'DEEP SEA' : 'SHELF');
   
@@ -1018,6 +1045,7 @@ function updateTelemetryCard(cell) {
     document.getElementById('score-favorability-bar').style.width = '0%';
     document.getElementById('score-sensitivity-label').textContent = '0%';
     document.getElementById('score-sensitivity-bar').style.width = '0%';
+    updateMatsyaAISec(cell);
     return;
   }
 
@@ -1030,10 +1058,14 @@ function updateTelemetryCard(cell) {
   const cacheKey = `${cell.lat.toFixed(1)}_${cell.lng.toFixed(1)}`;
   if (openMeteoCache.has(cacheKey)) {
     const forecast = openMeteoCache.get(cacheKey);
-    displayForecastData(forecast);
+    displayForecastData(cell, forecast);
   } else {
     document.getElementById('telemetry-wind').textContent = 'Fetching...';
     document.getElementById('telemetry-wave').textContent = 'Fetching...';
+    updateMatsyaAISec(cell);
+    if (forceImmediateFetch) {
+      fetchAndCacheForecast(cell);
+    }
   }
 
   // Update scores
@@ -1047,32 +1079,182 @@ function updateTelemetryCard(cell) {
   drawMiniTrendChart(cell);
 }
 
-function displayForecastData(forecast) {
+function displayForecastData(cell, forecast) {
   if (forecast && forecast.windSpeed !== null) {
     document.getElementById('telemetry-wind').textContent = `${forecast.windSpeed} ${forecast.windUnit} @ ${forecast.windDir}°`;
     document.getElementById('telemetry-wave').textContent = `${forecast.waveHeight} ${forecast.waveUnit} @ ${forecast.wavePeriod}s`;
+    updateMatsyaAISec(cell, forecast);
   } else {
     document.getElementById('telemetry-wind').textContent = '--';
     document.getElementById('telemetry-wave').textContent = '--';
+    updateMatsyaAISec(cell);
   }
 }
 
-async function fetchAndCacheForecast(lat, lng, cacheKey) {
+function updateMatsyaAISec(cell, liveForecast = null) {
+  if (!cell || cell.isLand) {
+    const twinX = document.getElementById('telemetry-twin-x');
+    const twinY = document.getElementById('telemetry-twin-y');
+    if (twinX) twinX.textContent = '--';
+    if (twinY) twinY.textContent = '--';
+    document.getElementById('eco-risk-label').textContent = '--';
+    document.getElementById('eco-risk-bar').style.width = '0%';
+    document.getElementById('eco-risk-badge').textContent = '--';
+    document.getElementById('eco-risk-badge').style.background = 'rgba(0,0,0,0.05)';
+    document.getElementById('eco-risk-badge').style.color = '#555';
+    document.getElementById('breakdown-e').textContent = '--';
+    document.getElementById('breakdown-b').textContent = '--';
+    document.getElementById('breakdown-o').textContent = '--';
+    document.getElementById('breakdown-a').textContent = '--';
+    document.getElementById('breakdown-v').textContent = '--';
+    document.getElementById('advisory-badge').textContent = '--';
+    document.getElementById('advisory-badge').style.background = 'rgba(0,0,0,0.05)';
+    document.getElementById('advisory-badge').style.color = '#555';
+    document.getElementById('advisory-reason').textContent = 'Select a location to synthesize advisory.';
+    document.getElementById('advisory-wave').textContent = '--';
+    document.getElementById('advisory-wind').textContent = '--';
+    return;
+  }
+
+  // 1. Digital Twin Coordinate Projection (X%, Y%) using projectTelemetryToPercent
+  const proj = projectTelemetryToPercent(cell.lat, cell.lng);
+  const twinX = document.getElementById('telemetry-twin-x');
+  const twinY = document.getElementById('telemetry-twin-y');
+  if (twinX) twinX.textContent = `${proj.xPercent.toFixed(1)}%`;
+  if (twinY) twinY.textContent = `${proj.yPercent.toFixed(1)}%`;
+
+  // Fetch values from cell or override with live forecast
+  let waveHeightVal = cell.waveHeight || 0;
+  let windSpeedVal = cell.windSpeed || 0;
+
+  if (liveForecast) {
+    if (liveForecast.waveHeight !== undefined && liveForecast.waveHeight !== null) {
+      waveHeightVal = liveForecast.waveHeight;
+    }
+    if (liveForecast.windSpeed !== undefined && liveForecast.windSpeed !== null) {
+      const unit = liveForecast.windUnit || '';
+      if (unit.includes('km/h')) {
+        windSpeedVal = liveForecast.windSpeed * 0.539957;
+      } else if (unit.includes('m/s')) {
+        windSpeedVal = liveForecast.windSpeed * 1.94384;
+      } else {
+        windSpeedVal = liveForecast.windSpeed;
+      }
+    }
+  }
+
+  // Recalculate O_risk and A_risk based on the potentially live values
+  const deltaT = Math.max(0, cell.sst - 28.0);
+  const deltaH = Math.max(0, waveHeightVal - 2.0);
+  const oRisk = Math.max(0, Math.min(100, Math.round(deltaT * 10 + deltaH * 15)));
+
+  let nCriticalAlerts = 0;
+  if (waveHeightVal > 3.0) nCriticalAlerts += 2;
+  else if (waveHeightVal > 2.0) nCriticalAlerts += 1;
+  if (cell.isRestrictedZone) nCriticalAlerts += 1;
+  const aRisk = Math.min(100, nCriticalAlerts * 25);
+
+  const eRisk = cell.eRisk !== undefined ? cell.eRisk : 0;
+  const bRisk = cell.bRisk !== undefined ? cell.bRisk : 0;
+  const vRisk = cell.vRisk !== undefined ? cell.vRisk : 0;
+
+  // Synthesize R_eco Weighted Calculation
+  const rEco = Math.round(0.30 * eRisk + 0.25 * bRisk + 0.20 * oRisk + 0.15 * aRisk + 0.10 * vRisk);
+
+  // Risk Classification
+  let riskLevel = 'Low';
+  if (rEco > 75) riskLevel = 'Critical';
+  else if (rEco > 50) riskLevel = 'High';
+  else if (rEco > 25) riskLevel = 'Moderate';
+
+  // Fishing Advisory Engine
+  let advisoryLevel = 'Recommended';
+  if (waveHeightVal > 4.0 || windSpeedVal > 30 || aRisk > 50) {
+    advisoryLevel = 'Avoid';
+  } else if (waveHeightVal > 2.5 || windSpeedVal > 20 || cell.fishingScore < 40) {
+    advisoryLevel = 'Caution';
+  }
+
+  // Update R_eco gauge and badge
+  document.getElementById('eco-risk-label').textContent = `${rEco}%`;
+  document.getElementById('eco-risk-bar').style.width = `${rEco}%`;
+  
+  const ecoBadge = document.getElementById('eco-risk-badge');
+  ecoBadge.textContent = riskLevel;
+  if (riskLevel === 'Critical') {
+    ecoBadge.style.background = 'rgba(220, 38, 38, 0.15)';
+    ecoBadge.style.color = '#b91c1c';
+  } else if (riskLevel === 'High') {
+    ecoBadge.style.background = 'rgba(249, 115, 22, 0.15)';
+    ecoBadge.style.color = '#c2410c';
+  } else if (riskLevel === 'Moderate') {
+    ecoBadge.style.background = 'rgba(234, 179, 8, 0.15)';
+    ecoBadge.style.color = '#854d0e';
+  } else {
+    ecoBadge.style.background = 'rgba(34, 197, 94, 0.15)';
+    ecoBadge.style.color = '#15803d';
+  }
+
+  // Update breakdowns
+  document.getElementById('breakdown-e').textContent = `${eRisk}%`;
+  document.getElementById('breakdown-b').textContent = `${bRisk}%`;
+  document.getElementById('breakdown-o').textContent = `${oRisk}%`;
+  document.getElementById('breakdown-a').textContent = `${aRisk}%`;
+  document.getElementById('breakdown-v').textContent = `${vRisk}%`;
+
+  // Update advisory
+  const advBadge = document.getElementById('advisory-badge');
+  advBadge.textContent = advisoryLevel;
+  if (advisoryLevel === 'Avoid') {
+    advBadge.style.background = 'rgba(220, 38, 38, 0.15)';
+    advBadge.style.color = '#b91c1c';
+  } else if (advisoryLevel === 'Caution') {
+    advBadge.style.background = 'rgba(234, 179, 8, 0.15)';
+    advBadge.style.color = '#854d0e';
+  } else {
+    advBadge.style.background = 'rgba(34, 197, 94, 0.15)';
+    advBadge.style.color = '#15803d';
+  }
+
+  // Reason texts matching the Fishing Advisory Engine rules
+  let reason = 'Oceanic metrics are stable. Safe navigation recommended.';
+  if (waveHeightVal > 4.0 || windSpeedVal > 30 || aRisk > 50) {
+    reason = 'Avoid: ';
+    const reasons = [];
+    if (waveHeightVal > 4.0) reasons.push(`severe waves (${waveHeightVal.toFixed(1)}m)`);
+    if (windSpeedVal > 30) reasons.push(`gale winds (${windSpeedVal.toFixed(0)}kts)`);
+    if (aRisk > 50) reasons.push(`ecological hazards`);
+    reason += reasons.join(' & ');
+  } else if (waveHeightVal > 2.5 || windSpeedVal > 20 || cell.fishingScore < 40) {
+    reason = 'Caution: ';
+    const reasons = [];
+    if (waveHeightVal > 2.5) reasons.push(`waves (${waveHeightVal.toFixed(1)}m)`);
+    if (windSpeedVal > 20) reasons.push(`winds (${windSpeedVal.toFixed(0)}kts)`);
+    if (cell.fishingScore < 40) reasons.push(`low catch yield`);
+    reason += reasons.join(' & ');
+  }
+  document.getElementById('advisory-reason').textContent = reason;
+  document.getElementById('advisory-wave').textContent = `${waveHeightVal.toFixed(1)}m`;
+  document.getElementById('advisory-wind').textContent = `${windSpeedVal.toFixed(0)}kts`;
+}
+
+async function fetchAndCacheForecast(cell) {
+  const cacheKey = `${cell.lat.toFixed(1)}_${cell.lng.toFixed(1)}`;
   try {
-    const data = await fetchOpenMeteoForecast(lat, lng);
+    const data = await fetchOpenMeteoForecast(cell.lat, cell.lng);
     if (data) {
       openMeteoCache.set(cacheKey, data);
-      if (lastHoveredCell && `${lastHoveredCell.lat.toFixed(1)}_${lastHoveredCell.lng.toFixed(1)}` === cacheKey) {
-        displayForecastData(data);
+      if (displayedTelemetryCell && `${displayedTelemetryCell.lat.toFixed(1)}_${displayedTelemetryCell.lng.toFixed(1)}` === cacheKey) {
+        displayForecastData(displayedTelemetryCell, data);
       }
     } else {
-      if (lastHoveredCell && `${lastHoveredCell.lat.toFixed(1)}_${lastHoveredCell.lng.toFixed(1)}` === cacheKey) {
+      if (displayedTelemetryCell && `${displayedTelemetryCell.lat.toFixed(1)}_${displayedTelemetryCell.lng.toFixed(1)}` === cacheKey) {
         document.getElementById('telemetry-wind').textContent = 'Error';
         document.getElementById('telemetry-wave').textContent = 'Error';
       }
     }
   } catch (err) {
-    if (lastHoveredCell && `${lastHoveredCell.lat.toFixed(1)}_${lastHoveredCell.lng.toFixed(1)}` === cacheKey) {
+    if (displayedTelemetryCell && `${displayedTelemetryCell.lat.toFixed(1)}_${displayedTelemetryCell.lng.toFixed(1)}` === cacheKey) {
       document.getElementById('telemetry-wind').textContent = 'Error';
       document.getElementById('telemetry-wave').textContent = 'Error';
     }
@@ -1202,7 +1384,7 @@ function updateSidebarLists() {
         vesselProgress = 0;
         document.getElementById('route-section').style.display = 'block';
         updateRouteTelemetry();
-        updateTelemetryCard(zone);
+        updateTelemetryCard(zone, true);
         
         // Update selected outline bounds
         const latStep = (LAT_MAX - LAT_MIN) / 24;
@@ -1260,7 +1442,7 @@ function updateSidebarLists() {
         selectedCell = zone;
         optimizedRoute = null;
         document.getElementById('route-section').style.display = 'none';
-        updateTelemetryCard(zone);
+        updateTelemetryCard(zone, true);
         
         // Remove selection outlines and routes since it's a sanctuary inspection
         if (map.hasLayer(selectedOutline)) map.removeLayer(selectedOutline);

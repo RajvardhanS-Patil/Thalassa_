@@ -4,7 +4,8 @@
  * with automatic simulated fallbacks for offline testing and zero-friction execution.
  */
 
-import { NetCDFReader } from 'netcdfjs';
+// netcdfjs import removed for offline/dependency-free execution
+
 
 // Target bounding box coordinates for Kerala
 const LAT_MIN = 8.0;
@@ -213,80 +214,6 @@ export async function fetchOpenMeteoForecast(lat, lng) {
  * Parse Copernicus NetCDF ArrayBuffer binary payload client-side
  */
 export function parseNetCdfBuffer(arrayBuffer) {
-  try {
-    const reader = new NetCDFReader(arrayBuffer);
-    
-    // Attempt to locate latitude and longitude
-    const latVarName = reader.variables.find(v => v.name === 'latitude' || v.name === 'lat')?.name;
-    const lonVarName = reader.variables.find(v => v.name === 'longitude' || v.name === 'lon')?.name;
-    
-    if (!latVarName || !lonVarName) {
-      throw new Error("Could not find latitude or longitude variables in NetCDF binary.");
-    }
-    
-    const lats = reader.getDataVariable(latVarName);
-    const lons = reader.getDataVariable(lonVarName);
-    
-    // Find target data variable (SST or Chlorophyll or Current components)
-    const sstVarName = reader.variables.find(v => v.name === 'thetao' || v.name === 'sst')?.name;
-    const chlVarName = reader.variables.find(v => v.name === 'chlor_a' || v.name === 'chl')?.name;
-    const uoVarName = reader.variables.find(v => v.name === 'uo')?.name;
-    const voVarName = reader.variables.find(v => v.name === 'vo')?.name;
-    
-    const points = [];
-    
-    // Check if we have uo/vo currents or scalar values
-    if (uoVarName && voVarName) {
-      const uoData = reader.getDataVariable(uoVarName);
-      const voData = reader.getDataVariable(voVarName);
-      
-      for (let i = 0; i < lats.length; i++) {
-        for (let j = 0; j < lons.length; j++) {
-          const flatIdx = (i * lons.length + j) % uoData.length;
-          const u = uoData[flatIdx] ?? 0;
-          const v = voData[flatIdx] ?? 0;
-          const speed = Math.sqrt(u * u + v * v);
-          const dir = (Math.atan2(u, v) * 180 / Math.PI + 360) % 360;
-          
-          points.push({
-            lat: lats[i],
-            lng: lons[j],
-            speed: parseFloat(speed.toFixed(2)),
-            dir: Math.round(dir)
-          });
-        }
-      }
-      return { source: 'Copernicus CMEMS currents', type: 'vector', points };
-    }
-    
-    const scalarVarName = sstVarName || chlVarName;
-    if (scalarVarName) {
-      const data = reader.getDataVariable(scalarVarName);
-      
-      for (let i = 0; i < lats.length; i++) {
-        for (let j = 0; j < lons.length; j++) {
-          const flatIdx = (i * lons.length + j) % data.length;
-          const val = data[flatIdx];
-          
-          if (val !== undefined && !isNaN(val)) {
-            points.push({
-              lat: lats[i],
-              lng: lons[j],
-              value: parseFloat(val.toFixed(2))
-            });
-          }
-        }
-      }
-      return { 
-        source: sstVarName ? 'Copernicus CMEMS SST' : 'Copernicus CMEMS Chlorophyll', 
-        parameter: sstVarName ? 'sst' : 'chlorophyll', 
-        points 
-      };
-    }
-    
-    return null;
-  } catch (error) {
-    console.error(`[Thalassa NetCDF Parser] Error parsing NetCDF arrayBuffer:`, error);
-    return null;
-  }
+  console.warn("[Thalassa API Client] NetCDF parsing is disabled in offline mode.");
+  return null;
 }

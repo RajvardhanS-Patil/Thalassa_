@@ -216,6 +216,17 @@ export function generateDigitalTwinGrid(dayOfYear, liveData = null) {
 
       fishingScore = Math.min(100, Math.max(0, isLand ? 0 : Math.round(fishingScore)));
 
+      // Calculate Matsya AI Risk & Advisory parameters
+      const matsyaAI = calculateMatsyaAIParams({
+        sst,
+        minDistanceToCoast,
+        isRestrictedZone,
+        activeMPA,
+        conservationScore,
+        fishingScore,
+        isDeepOcean
+      }, dayOfYear);
+
       grid.push({
         row: r,
         col: c,
@@ -233,12 +244,132 @@ export function generateDigitalTwinGrid(dayOfYear, liveData = null) {
         activeMPA,
         sensitivityReasons,
         favorabilityReasons,
-        minDistanceToCoast: parseFloat(minDistanceToCoast.toFixed(1))
+        minDistanceToCoast: parseFloat(minDistanceToCoast.toFixed(1)),
+        // Matsya AI core fields
+        rEco: matsyaAI.rEco,
+        riskLevel: matsyaAI.riskLevel,
+        advisoryLevel: matsyaAI.advisoryLevel,
+        eRisk: matsyaAI.eRisk,
+        bRisk: matsyaAI.bRisk,
+        oRisk: matsyaAI.oRisk,
+        aRisk: matsyaAI.aRisk,
+        vRisk: matsyaAI.vRisk,
+        waveHeight: parseFloat(matsyaAI.waveHeight.toFixed(2)),
+        windSpeed: parseFloat(matsyaAI.windSpeed.toFixed(1))
       });
     }
   }
 
   return grid;
+}
+
+/**
+ * Matsya Engine AI Core parameter calculator
+ * Synthesizes the Weighted Ecological Risk Score (R_eco) and Fishing Advisory Level.
+ */
+export function calculateMatsyaAIParams(cell, dayOfYear) {
+  if (!cell || cell.isLand) {
+    return {
+      rEco: 0,
+      riskLevel: 'Low',
+      advisoryLevel: 'Recommended',
+      eRisk: 0,
+      bRisk: 0,
+      oRisk: 0,
+      aRisk: 0,
+      vRisk: 0,
+      waveHeight: 0,
+      windSpeed: 0
+    };
+  }
+
+  // 1. Ecosystem Stability Risk (E_risk) = 100 - H_health_score
+  const healthScore = Math.max(0, Math.min(100, Math.round(
+    85 - (cell.minDistanceToCoast < 30 ? (30 - cell.minDistanceToCoast) * 0.8 : 0) - (cell.isRestrictedZone ? 5 : 0)
+  )));
+  const eRisk = 100 - healthScore;
+
+  // 2. Biodiversity Risk (B_risk) = 100 - BHI
+  const BHI = Math.max(0, Math.min(100, Math.round(
+    80 + (cell.activeMPA ? 12 : 0) - (cell.conservationScore > 50 ? 10 : 0)
+  )));
+  const bRisk = 100 - BHI;
+
+  // 3. Oceanographic Condition Risk (O_risk)
+  // O_risk = clip(0, 100, delta_T_sst * 10 + delta_H_wave * 15)
+  const seasonalWave = 1.2 + 2.0 * Math.max(0, Math.sin((dayOfYear - 150) * (2 * Math.PI / 365)));
+  const waveHeight = cell.isDeepOcean ? seasonalWave + 0.8 : seasonalWave;
+
+  const deltaT = Math.max(0, cell.sst - 28.0);
+  const deltaH = Math.max(0, waveHeight - 2.0);
+  const oRisk = Math.max(0, Math.min(100, Math.round(deltaT * 10 + deltaH * 15)));
+
+  // 4. Alert Incident Density Risk (A_risk) = min(100, N_critical_alerts * 25)
+  let nCriticalAlerts = 0;
+  if (waveHeight > 3.0) nCriticalAlerts += 2;
+  else if (waveHeight > 2.0) nCriticalAlerts += 1;
+  if (cell.isRestrictedZone) nCriticalAlerts += 1;
+  const aRisk = Math.min(100, nCriticalAlerts * 25);
+
+  // 5. Vessel Compliance Risk (V_risk) = min(100, N_non_compliant / N_total * 100)
+  const totalVessels = cell.isRestrictedZone ? 6 : (cell.minDistanceToCoast < 40 ? 10 : 3);
+  const nonCompliant = cell.isRestrictedZone ? 2 : 1;
+  const vRisk = totalVessels > 0 ? Math.min(100, Math.round((nonCompliant / totalVessels) * 100)) : 0;
+
+  // R_eco Weighted Calculation
+  const rEco = Math.round(0.30 * eRisk + 0.25 * bRisk + 0.20 * oRisk + 0.15 * aRisk + 0.10 * vRisk);
+
+  // Risk Classification
+  let riskLevel = 'Low';
+  if (rEco > 75) riskLevel = 'Critical';
+  else if (rEco > 50) riskLevel = 'High';
+  else if (rEco > 25) riskLevel = 'Moderate';
+
+  // Fishing Advisory Engine
+  // Wind Speed simulation (knots)
+  const baseWind = 12 + 15 * Math.max(0, Math.sin((dayOfYear - 140) * (2 * Math.PI / 365)));
+  const windSpeed = cell.isDeepOcean ? baseWind + 6 : baseWind;
+
+  let advisoryLevel = 'Recommended';
+  if (waveHeight > 4.0 || windSpeed > 30 || aRisk > 50) {
+    advisoryLevel = 'Avoid';
+  } else if (waveHeight > 2.5 || windSpeed > 20 || cell.fishingScore < 40) {
+    advisoryLevel = 'Caution';
+  }
+
+  return {
+    rEco,
+    riskLevel,
+    advisoryLevel,
+    eRisk,
+    bRisk,
+    oRisk,
+    aRisk,
+    vRisk,
+    waveHeight,
+    windSpeed
+  };
+}
+
+/**
+ * Mathematical spatial projection formula from global telemetry (Lat/Lng)
+ * to 2D canvas coordinates using linear spatial normalization.
+ * Western Longitude (lambda_min) = 72.0E, Eastern Longitude (lambda_max) = 76.0E
+ * Southern Latitude (phi_min) = 14.0N, Northern Latitude (phi_max) = 20.0N
+ */
+export function projectTelemetryToPercent(lat, lng) {
+  const lambdaMin = LNG_MIN;
+  const lambdaMax = LNG_MAX;
+  const phiMin = LAT_MIN;
+  const phiMax = LAT_MAX;
+
+  const xPercent = ((lng - lambdaMin) / (lambdaMax - lambdaMin)) * 100;
+  const yPercent = 100 - (((lat - phiMin) / (phiMax - phiMin)) * 100);
+
+  return {
+    xPercent: parseFloat(xPercent.toFixed(2)),
+    yPercent: parseFloat(yPercent.toFixed(2))
+  };
 }
 
 /**
@@ -282,29 +413,46 @@ export function calculateOptimizedRoute(portId, targetCell, grid, dayOfYear = 17
     stdDist += getDistanceKM(stdPath[i].lat, stdPath[i].lng, stdPath[i+1].lat, stdPath[i+1].lng);
   }
 
-  // 2. Calculate Thalassa Optimized Route (Deflecting around active spawning bans)
-  const path = [];
-  path.push({ lat: startLat, lng: startLng });
-
-  for (let i = 1; i < steps; i++) {
-    const ratio = i / steps;
-    let intermediateLat = startLat + (endLat - startLat) * ratio;
-    let intermediateLng = startLng + (endLng - startLng) * ratio;
-
-    // Check if straight line cuts through any restricted zones
-    // If so, apply a simple deflection vector perpendicular to the line
-    for (const zone of CONSERVATION_ZONES) {
-      if (zone.restrictedMonths.includes(currentMonth) && isPointInPolygon({ lat: intermediateLat, lng: intermediateLng }, zone.polygon)) {
-        // Deflect westward (seaward) out of the zone
-        intermediateLng -= 0.18; // Shift left
-      }
+  // 2. Find the closest grid cell to the starting port
+  let startCell = null;
+  let minStartDist = Infinity;
+  for (const cell of grid) {
+    if (cell.isLand) continue;
+    const dist = getDistanceKM(startLat, startLng, cell.lat, cell.lng);
+    if (dist < minStartDist) {
+      minStartDist = dist;
+      startCell = cell;
     }
-
-    path.push({ lat: intermediateLat, lng: intermediateLng });
   }
 
-  // Add end target point
-  path.push({ lat: endLat, lng: endLng });
+  let path = null;
+  if (startCell) {
+    path = findAStarPath(startCell, targetCell, grid);
+  }
+
+  if (path && path.length > 1) {
+    // Snap exact start and end coordinates
+    path[0] = { lat: startLat, lng: startLng };
+    path[path.length - 1] = { lat: endLat, lng: endLng };
+    // Resample path to exactly 15 points for smooth vessel animation
+    path = resamplePath(path, 15);
+  } else {
+    // Fallback: simple deflection-based path
+    path = [];
+    path.push({ lat: startLat, lng: startLng });
+    for (let i = 1; i < steps; i++) {
+      const ratio = i / steps;
+      let intermediateLat = startLat + (endLat - startLat) * ratio;
+      let intermediateLng = startLng + (endLng - startLng) * ratio;
+      for (const zone of CONSERVATION_ZONES) {
+        if (isPointInPolygon({ lat: intermediateLat, lng: intermediateLng }, zone.polygon)) {
+          intermediateLng -= 0.18; // Deflect seaward
+        }
+      }
+      path.push({ lat: intermediateLat, lng: intermediateLng });
+    }
+    path.push({ lat: endLat, lng: endLng });
+  }
 
   // Calculate total path distance
   let totalDist = 0;
@@ -325,6 +473,140 @@ export function calculateOptimizedRoute(portId, targetCell, grid, dayOfYear = 17
 }
 
 /**
+ * Standard A* Pathfinding Algorithm on 2D grid
+ */
+function findAStarPath(startCell, targetCell, grid) {
+  // Build a 2D lookup map by [row][col]
+  const gridMap = {};
+  for (const cell of grid) {
+    if (!gridMap[cell.row]) gridMap[cell.row] = {};
+    gridMap[cell.row][cell.col] = cell;
+  }
+
+  const openSet = [startCell];
+  const closedSet = new Set();
+  const cameFrom = new Map();
+
+  const gScore = new Map();
+  const fScore = new Map();
+
+  const cellKey = (cell) => `${cell.row}_${cell.col}`;
+
+  gScore.set(cellKey(startCell), 0);
+  fScore.set(cellKey(startCell), getDistanceKM(startCell.lat, startCell.lng, targetCell.lat, targetCell.lng));
+
+  while (openSet.length > 0) {
+    // Find node with lowest fScore
+    let current = openSet[0];
+    let currentF = fScore.get(cellKey(current)) ?? Infinity;
+    let currentIdx = 0;
+
+    for (let i = 1; i < openSet.length; i++) {
+      const f = fScore.get(cellKey(openSet[i])) ?? Infinity;
+      if (f < currentF) {
+        current = openSet[i];
+        currentF = f;
+        currentIdx = i;
+      }
+    }
+
+    // Check if reached destination cell
+    if (current.row === targetCell.row && current.col === targetCell.col) {
+      const path = [];
+      let curr = current;
+      while (curr) {
+        path.push({ lat: curr.lat, lng: curr.lng });
+        curr = cameFrom.get(cellKey(curr));
+      }
+      return path.reverse();
+    }
+
+    openSet.splice(currentIdx, 1);
+    closedSet.add(cellKey(current));
+
+    // Get 8-directional neighbors
+    const neighbors = [];
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = current.row + dr;
+        const nc = current.col + dc;
+        if (gridMap[nr] && gridMap[nr][nc]) {
+          neighbors.push(gridMap[nr][nc]);
+        }
+      }
+    }
+
+    for (const neighbor of neighbors) {
+      const neighborKey = cellKey(neighbor);
+      if (closedSet.has(neighborKey)) continue;
+      if (neighbor.isLand) continue; // Walled off by land
+
+      // Traversal cost factors (highly penalize restricted / sensitive zones)
+      let costMultiplier = 1.0;
+      if (neighbor.isRestrictedZone) {
+        costMultiplier = 15.0; // Strictly avoid spawning bans
+      } else if (neighbor.conservationScore > 30) {
+        costMultiplier = 1.5 + (neighbor.conservationScore / 50.0);
+      }
+
+      // Add small penalty for diagonal movement to keep routes cleaner
+      const isDiagonal = (neighbor.row !== current.row) && (neighbor.col !== current.col);
+      const moveCost = getDistanceKM(current.lat, current.lng, neighbor.lat, neighbor.lng) * (isDiagonal ? 1.414 : 1.0);
+      
+      const tentativeG = (gScore.get(cellKey(current)) ?? Infinity) + moveCost * costMultiplier;
+
+      if (!openSet.some(n => cellKey(n) === neighborKey)) {
+        openSet.push(neighbor);
+      } else if (tentativeG >= (gScore.get(neighborKey) ?? Infinity)) {
+        continue;
+      }
+
+      cameFrom.set(neighborKey, current);
+      gScore.set(neighborKey, tentativeG);
+      fScore.set(neighborKey, tentativeG + getDistanceKM(neighbor.lat, neighbor.lng, targetCell.lat, targetCell.lng));
+    }
+  }
+
+  return null; // Path not found
+}
+
+/**
+ * Resamples a path of coordinate points to exactly N evenly spaced coordinates
+ */
+function resamplePath(points, numPoints = 15) {
+  if (!points || points.length === 0) return [];
+  if (points.length === 1) return Array(numPoints).fill(points[0]);
+
+  const distances = [0];
+  let totalLength = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const dist = getDistanceKM(points[i].lat, points[i].lng, points[i+1].lat, points[i+1].lng);
+    totalLength += dist;
+    distances.push(totalLength);
+  }
+
+  const resampled = [];
+  for (let i = 0; i < numPoints; i++) {
+    const targetDist = (i / (numPoints - 1)) * totalLength;
+    let segIdx = 0;
+    while (segIdx < distances.length - 1 && distances[segIdx + 1] < targetDist) {
+      segIdx++;
+    }
+    const d1 = distances[segIdx];
+    const d2 = distances[segIdx + 1];
+    const p1 = points[segIdx];
+    const p2 = points[segIdx + 1];
+    const t = d2 === d1 ? 0 : (targetDist - d1) / (d2 - d1);
+    resampled.push({
+      lat: p1.lat + (p2.lat - p1.lat) * t,
+      lng: p1.lng + (p2.lng - p1.lng) * t
+    });
+  }
+  return resampled;
+}
+
+/**
  * Helper to find nearest coordinate in live API datasets
  */
 function findNearestLivePoint(point, points) {
@@ -337,6 +619,5 @@ function findNearestLivePoint(point, points) {
       nearest = pt;
     }
   }
-  // Clamp match to a reasonable spatial distance (e.g. 50km)
   return minDistance < 50 ? nearest : null;
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Thalassa - Kerala Coastal Digital Twin</title>
+  <title>Matsya Drishti - Ocean AI & Fisheries Advisory Portal</title>
   <link rel="stylesheet" href="/index.css">
   <!-- Leaflet CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
@@ -11,26 +11,32 @@
 </head>
 <body>
 
-  <!-- Announcement Bar (Cohere Style) -->
-  <div style="background: var(--cohere-black); color: var(--on-dark); height: 36px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--font-mono); letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.1);">
-    <span>THALASSA DIGITAL TWIN PROTOTYPE — ACTIVE MONSOON KERALA GRID</span>
+  <!-- Announcement Bar -->
+  <div style="background: var(--cohere-black); color: white; height: 36px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-family: var(--font-mono); letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+    <span>DEPARTMENT OF FISHERIES • INCOIS OCEAN ADVISORY SERVICES • LIVE MONSOON GRID</span>
   </div>
 
   <!-- Header Navigation -->
   <header>
     <div class="container nav-bar">
-      <a href="#" class="nav-logo">THALASSA</a>
+      <a href="#" class="nav-logo">
+        MATSYA DRISHTI <span class="nav-sub-tag">OCEAN AI</span>
+      </a>
       
       <!-- Primary Toggle between Modes -->
       <div class="view-switch">
-        <button id="mode-fisherman" class="switch-btn active">Fisherman Dashboard</button>
-        <button id="mode-conservationist" class="switch-btn">Conservation Dashboard</button>
+        <button id="mode-fisherman" class="switch-btn active">Fisherman Mode</button>
+        <button id="mode-conservationist" class="switch-btn">Conservation Mode</button>
       </div>
 
       <!-- Action Actions -->
       <div class="nav-actions">
-        <button id="btn-fetch-live" class="btn-outline">Trigger Live API Fetch</button>
-        <span class="mono-label" style="font-size: 10px;">GRID CELL V1.0</span>
+        <div class="lang-selector">
+          <span class="lang-btn active" data-lang="en">EN</span>
+          <span class="lang-btn" data-lang="ml">മലയാളം</span>
+          <span class="lang-btn" data-lang="ta">தமிழ்</span>
+        </div>
+        <button id="btn-fetch-live" class="btn-outline">Live INCOIS Fetch</button>
       </div>
     </div>
   </header>
@@ -48,6 +54,18 @@
       </div>
       <div class="presets-right">
         <button id="btn-start-tour" class="preset-btn highlight-btn">Start Guided Tour 🧭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- INCOIS Ocean State Advisory Banner -->
+  <div class="alert-ticker">
+    <div class="ticker-label">⚠️ INCOIS ADVISORY</div>
+    <div class="ticker-content-wrapper">
+      <div class="ticker-text">
+        <span>🌊 HIGH WAVE WARNING: Wave heights of 2.5m - 3.2m forecast off Kerala coast (Vizhinjam to Kasaragod). Fishermen advised to be cautious.</span>
+        <span>💨 MET ALERT: Southwest winds reaching 45-55 km/h expected. Strong wind warning active.</span>
+        <span>🐟 PFZ INSIGHT: Optimal Sea Surface Temperature (27.8°C) and high Chlorophyll density detected 45km west of Neendakara.</span>
       </div>
     </div>
   </div>
@@ -203,14 +221,86 @@
               </div>
             </div>
 
-            <div style="margin-top: var(--space-sm);">
+            <div style="margin-top: var(--space-sm); border-top: 1px dashed var(--hairline); padding-top: var(--space-xs); font-size: 11px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                <span style="color: var(--muted);">Digital Twin Grid X</span>
+                <span id="telemetry-twin-x" style="font-family: var(--font-mono); font-weight: 600; color: var(--color-primary);">--%</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--muted);">Digital Twin Grid Y</span>
+                <span id="telemetry-twin-y" style="font-family: var(--font-mono); font-weight: 600; color: var(--color-primary);">--%</span>
+              </div>
+            </div>
+
+            <div style="margin-top: var(--space-md);">
               <span class="mono-label" style="font-size: 9px; margin-bottom: 4px; display: block;">12-Month Seasonal SST Trend (°C)</span>
-              <canvas id="mini-trend-chart" style="width: 100%; height: 50px; display: block; background: #fafafa; border: 1px solid var(--border-light); border-radius: var(--radius-xs);"></canvas>
+              <canvas id="mini-trend-chart" style="width: 100%; height: 50px; display: block; background: rgba(0,0,0,0.2); border: 1px solid var(--border-light); border-radius: var(--radius-xs);"></canvas>
             </div>
           </div>
         </div>
 
-        <!-- Section 3: Perspective-Specific Lists -->
+        <!-- Section 3: Matsya AI Inference Core -->
+        <div class="sidebar-section" id="matsya-ai-section">
+          <h3 class="mono-label" style="margin-bottom: var(--space-sm);">MATSYA AI INFERENCE CORE</h3>
+          <div class="info-card" id="matsya-card">
+            <div class="info-card-header">
+              <span class="info-card-title">Eco Risk & Advisory</span>
+              <span id="eco-risk-badge" class="mono-label" style="background: rgba(220, 38, 38, 0.2); color: #ff8888; padding: 4px 8px; border-radius: var(--radius-xs); font-size: 10px; font-weight: 600;">--</span>
+            </div>
+            
+            <div style="margin: var(--space-sm) 0; height: 1px; background-color: var(--color-border-glow);"></div>
+            
+            <!-- Ecological Risk Score ($R_{eco}$) -->
+            <div style="margin-bottom: var(--space-sm);">
+              <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 2px;">
+                <span style="font-weight: 500;">Synthesized Risk (R<sub>eco</sub>)</span>
+                <span id="eco-risk-label" style="font-weight: 600;">--%</span>
+              </div>
+              <div class="gauge-container" style="background: rgba(255,255,255,0.05);">
+                <div class="gauge-bar" id="eco-risk-bar" style="background: var(--color-status-critical); width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Risk breakdown details grid -->
+            <div class="risk-breakdown-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: var(--space-md); text-align: center;">
+              <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px; border: 1px solid var(--color-border-glow);">
+                <div style="font-size: 8px; color: var(--color-secondary);">E<sub>risk</sub></div>
+                <div id="breakdown-e" style="font-size: 11px; font-weight: bold; font-family: var(--font-mono); color: var(--color-primary);">--</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px; border: 1px solid var(--color-border-glow);">
+                <div style="font-size: 8px; color: var(--color-secondary);">B<sub>risk</sub></div>
+                <div id="breakdown-b" style="font-size: 11px; font-weight: bold; font-family: var(--font-mono); color: var(--color-primary);">--</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px; border: 1px solid var(--color-border-glow);">
+                <div style="font-size: 8px; color: var(--color-secondary);">O<sub>risk</sub></div>
+                <div id="breakdown-o" style="font-size: 11px; font-weight: bold; font-family: var(--font-mono); color: var(--color-primary);">--</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px; border: 1px solid var(--color-border-glow);">
+                <div style="font-size: 8px; color: var(--color-secondary);">A<sub>risk</sub></div>
+                <div id="breakdown-a" style="font-size: 11px; font-weight: bold; font-family: var(--font-mono); color: var(--color-primary);">--</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.05); padding: 4px; border-radius: 4px; border: 1px solid var(--color-border-glow);">
+                <div style="font-size: 8px; color: var(--color-secondary);">V<sub>risk</sub></div>
+                <div id="breakdown-v" style="font-size: 11px; font-weight: bold; font-family: var(--font-mono); color: var(--color-primary);">--</div>
+              </div>
+            </div>
+
+            <!-- Fishing Advisory Level -->
+            <div style="background: rgba(0, 163, 255, 0.05); border: 1px dashed var(--color-status-info); border-radius: var(--radius-sm); padding: var(--space-sm);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span class="mono-label" style="font-size: 9px; color: var(--color-secondary);">Sailing Advisory</span>
+                <span id="advisory-badge" style="padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase;">--</span>
+              </div>
+              <div id="advisory-reason" class="caption" style="color: var(--color-primary); font-size: 11px;">Select a location to synthesize advisory.</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; font-size: 11px; font-family: var(--font-mono); border-top: 1px solid rgba(255,255,255,0.05); padding-top: var(--space-xxs);">
+                <div>Wave: <span id="advisory-wave" style="font-weight: bold; color: var(--color-status-info);">--</span></div>
+                <div>Wind: <span id="advisory-wind" style="font-weight: bold; color: var(--color-status-info);">--</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 4: Perspective-Specific Lists -->
         <div class="sidebar-section" id="dynamic-list-section">
           <h3 class="mono-label" id="dynamic-list-title" style="margin-bottom: var(--space-sm);">HIGH YIELD FISHING ZONES</h3>
           <div class="card-list" id="dynamic-cards-list">
