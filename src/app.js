@@ -1,6 +1,6 @@
 /**
  * Thalassa Digital Twin Interface Controller
- * Manages canvas visualization, user interactions, telemetry bindings, and API sync.
+ * Manages native Leaflet map layers, telemetry sidebar, seasonal timeline, live API sync, scenario presets, and guided tours.
  */
 
 import { KERALA_COASTLINE, FISHING_HARBORS, CONSERVATION_ZONES } from './data/kerala_spatial.js';
@@ -13,109 +13,12 @@ let mouseMoveDebounceTimer = null;
 
 // Global state
 let currentMode = 'fisherman'; // 'fisherman' or 'conservationist'
-let currentLang = 'en'; // 'en', 'ml', or 'ta'
 let selectedPort = 'munambam';
 let dayOfYear = 175; // Defaults to late June (Monsoon season)
-
-// Matsya Drishti Multilingual Translation Engine
-const TRANSLATIONS = {
-  en: {
-    titleFisherman: "Optimized Fishing & Catch Advisories",
-    descFisherman: "Real-time oceanographic routing system prioritizing harvest yields based on sea surface temperature and primary productivity chlorophyll values.",
-    titleConservationist: "Marine Ecosystem Protection & Spawning Bans",
-    descConservationist: "Protected marine conservation reserves and seasonal species spawning calendar monitoring for sustainable ocean ecology management.",
-    badgeFisherman: "FISHERMAN VIEW",
-    badgeConservationist: "CONSERVATION VIEW",
-    listTitleFisherman: "HIGH YIELD FISHING ZONES",
-    listTitleConservationist: "CRITICAL HABITATS & ACTIVE RESTRICTIONS",
-    btnLive: "Live INCOIS Fetch",
-    advisoryHeader: "⚠️ INCOIS ADVISORY",
-    advisoryText: [
-      "🌊 HIGH WAVE WARNING: Wave heights of 2.5m - 3.2m forecast off Kerala coast (Vizhinjam to Kasaragod). Fishermen advised to be cautious.",
-      "💨 MET ALERT: Southwest winds reaching 45-55 km/h expected. Strong wind warning active.",
-      "🐟 PFZ INSIGHT: Optimal Sea Surface Temperature (27.8°C) and high Chlorophyll density detected 45km west of Neendakara."
-    ]
-  },
-  ml: {
-    titleFisherman: "മെച്ചപ്പെടുത്തിയ മത്സ്യബന്ധന വിവരങ്ങൾ",
-    descFisherman: "കടൽ താപനിലയും ക്ലോറോഫിൽ സാന്ദ്രതയും അടിസ്ഥാനമാക്കി കൂടുതൽ മീൻ ലഭിക്കുന്നതിനുള്ള തത്സമയ റൂട്ടിംഗ് സംവിധാനം.",
-    titleConservationist: "കടൽ സംരക്ഷണവും നിരോധന കാലയളവും",
-    descConservationist: "സുസ്ഥിരമായ മത്സ്യബന്ധനത്തിനും കടൽ ആവാസവ്യവസ്ഥയുടെ സംരക്ഷണത്തിനുമായി വിവിധ സംരക്ഷിത മേഖലകളും പ്രജനന നിരോധന കാലയളവ് പരിശോധനയും.",
-    badgeFisherman: "മത്സ്യബന്ധന സഹായി",
-    badgeConservationist: "സംരക്ഷണ സഹായി",
-    listTitleFisherman: "കൂടിയ വിളവുള്ള മത്സ്യബന്ധന മേഖലകൾ",
-    listTitleConservationist: "പ്രധാന കടൽ സംരക്ഷിത പ്രദേശങ്ങൾ",
-    btnLive: "തത്സമയ വിവരങ്ങൾ",
-    advisoryHeader: "⚠️ മുന്നറിയിപ്പ്",
-    advisoryText: [
-      "🌊 ഉയർന്ന തിരമാല ജാഗ്രത: കേരള തീരങ്ങളിൽ (വിഴിഞ്ഞം മുതൽ കാസർഗോഡ് വരെ) 2.5 മുതൽ 3.2 മീറ്റർ വരെ ഉയരമുള്ള തിരമാലകൾക്ക് സാധ്യത. ജാഗ്രത പാലിക്കുക.",
-      "💨 കാറ്റ് മുന്നറിയിപ്പ്: മണിക്കൂറിൽ 45-55 കി.മീ വേഗതയുള്ള ശക്തമായ കാറ്റിന് സാധ്യതയുണ്ട്.",
-      "🐟 ഉപദേശം: നീണ്ടകരയ്ക്ക് പടിഞ്ഞാറ് 45 കി.മീ മാറി അനുകൂല താപനിലയും കൂടുതൽ പ്ലവങ്ങളും കണ്ടെത്തി."
-    ]
-  },
-  ta: {
-    titleFisherman: "மீன்பிடி வழிகாட்டி மற்றும் ஆலோசனைகள்",
-    descFisherman: "கடல் வெப்பநிலை மற்றும் குளோரோபில் அடர்த்தியின் அடிப்படையில் அதிக மகசூல் தரும் பகுதிகளுக்கான நிகழ்நேர கடல் வழிகாட்டி.",
-    titleConservationist: "கடல் சுற்றுச்சூழல் பாதுகாப்பு",
-    descConservationist: "நிலையான மீன்பிடிப்பு மற்றும் கடல் வளங்களைப் பாதுகாப்பதற்கான தடைசெய்யப்பட்ட பகுதிகள் மற்றும் இனப்பெருக்க கால அவகாசம் கண்காணிப்பு.",
-    badgeFisherman: "மீனவர் பார்வை",
-    badgeConservationist: "கடல் பாதுகாப்பு",
-    listTitleFisherman: "அதிக மகசூல் தரும் மீன்பிடி மண்டலங்கள்",
-    listTitleConservationist: "முக்கிய பாதுகாக்கப்பட்ட கடல் பகுதிகள்",
-    btnLive: "லைவ் தகவல்",
-    advisoryHeader: "⚠️ அறிவிப்பு",
-    advisoryText: [
-      "🌊 அலை எச்சரிக்கை: கேரளா கடற்பகுதியில் (விழிஞ்ஞம் முதல் காசர்கோடு வரை) 2.5 முதல் 3.2 மீட்டர் வரை உயரமான அலைகள் வீசக்கூடும். மீனவர்கள் எச்சரிக்கையுடன் இருக்கவும்.",
-      "💨 காற்றின் எச்சரிக்கை: மணிக்கு 45-55 கிமீ வேகத்தில் காற்று வீசக்கூடும் என்பதால் கூடுதல் கவனம் தேவை.",
-      "🐟 மீன்பிடி வாய்ப்பு: நீண்டகரைக்கு மேற்கே 45 கிமீ தொலைவில் சாதகமான வெப்பநிலையும் அதிக குளோரோபில் செறிவும் கண்டறியப்பட்டுள்ளது."
-    ]
-  }
-};
-
-function translateUI(lang) {
-  currentLang = lang;
-  const trans = TRANSLATIONS[lang] || TRANSLATIONS['en'];
-  
-  const heading = document.getElementById('main-perspective-heading');
-  const desc = document.getElementById('main-perspective-desc');
-  const badge = document.getElementById('perspective-badge');
-  const listTitle = document.getElementById('dynamic-list-title');
-  const btnLive = document.getElementById('btn-fetch-live');
-  const tickerLabel = document.querySelector('.ticker-label');
-  const tickerTextDiv = document.querySelector('.ticker-text');
-
-  if (currentMode === 'fisherman') {
-    if (heading) heading.textContent = trans.titleFisherman;
-    if (desc) desc.textContent = trans.descFisherman;
-    if (listTitle) listTitle.textContent = trans.listTitleFisherman;
-    if (badge) {
-      badge.textContent = trans.badgeFisherman;
-      badge.style.background = 'var(--pale-green)';
-      badge.style.color = 'var(--deep-green)';
-    }
-  } else {
-    if (heading) heading.textContent = trans.titleConservationist;
-    if (desc) desc.textContent = trans.descConservationist;
-    if (listTitle) listTitle.textContent = trans.listTitleConservationist;
-    if (badge) {
-      badge.textContent = trans.badgeConservationist;
-      badge.style.background = 'var(--pale-blue)';
-      badge.style.color = 'var(--primary-color)';
-    }
-  }
-
-  if (btnLive) btnLive.textContent = trans.btnLive;
-  if (tickerLabel) tickerLabel.textContent = trans.advisoryHeader;
-  
-  if (tickerTextDiv) {
-    tickerTextDiv.innerHTML = trans.advisoryText.map(t => `<span>${t}</span>`).join('');
-  }
-
-  updateSidebarLists();
-}
 let liveData = null;
 let gridData = [];
 let selectedCell = null;
+let hoveredCell = null; // Currently hovered grid coordinate
 let displayedTelemetryCell = null;
 let optimizedRoute = null;
 let isPlaying = false;
@@ -134,42 +37,70 @@ const activeOverlays = {
   mpa: true
 };
 
-// Canvas references
-const canvas = document.getElementById('map-canvas');
-const ctx = canvas.getContext('2d');
-
 // Bounding box limits matching data_engine.js
 const LAT_MIN = 8.0;
 const LAT_MAX = 12.8;
 const LNG_MIN = 74.5;
 const LNG_MAX = 77.5;
 
-// Coordinate projection helper functions utilizing Leaflet Map API
-function projectX(lng) {
-  if (!map) return 0;
-  return map.latLngToContainerPoint([10.4, lng]).x;
-}
+// Leaflet Layer Groups
+let gridLayerGroup = null;
+let conservationLayerGroup = null;
+let portsLayerGroup = null;
+let currentsLayerGroup = null;
+let gridLinesLayerGroup = null;
 
-function projectY(lat) {
-  if (!map) return 0;
-  return map.latLngToContainerPoint([lat, 76.0]).y;
-}
+// Interactive Highlights & Vessel Layers
+let hoverOutline = null;
+let selectedOutline = null;
+let routePolyline = null;
+let vesselMarker = null;
 
-function unprojectX(x) {
-  if (!map) return LNG_MIN;
-  return map.containerPointToLatLng(L.point(x, 0)).lng;
-}
+// Guided Tour state
+let tourActive = false;
+let tourStep = 0;
 
-function unprojectY(y) {
-  if (!map) return LAT_MAX;
-  return map.containerPointToLatLng(L.point(0, y)).lat;
-}
+const tourSteps = [
+  {
+    title: "Welcome to Thalassa 🌊",
+    desc: "This digital twin maps the Kerala coastline to balance sustainable fishing yields with marine reserve spawning bans. Let's take a 1-minute guided tour of its core capabilities.",
+    highlightId: "btn-start-tour",
+    position: "bottom"
+  },
+  {
+    title: "Dual Perspective Dashboards 🔀",
+    desc: "Switch between 'Fisherman Dashboard' (optimizing catches using sea surface temperature and chlorophyll indexes) and 'Conservation Dashboard' (restricting sensitive spawning zones). Try toggling this later!",
+    highlightId: "mode-fisherman",
+    position: "bottom"
+  },
+  {
+    title: "Debounced Hover Telemetry 📊",
+    desc: "Hovering over map grid cells queries Open-Meteo APIs for real-time wind and wave forecasts. Coordinate-rounded caching prevents API rate-limiting. Try hovering over cells!",
+    highlightId: "telemetry-card",
+    position: "left"
+  },
+  {
+    title: "Dynamic Seasonal Timeline 🗓️",
+    desc: "Scrub the calendar day slider or hit Play to animate monsoon seasonal variations, including chlorophyll upwellings and shifting conservation boundaries.",
+    highlightId: "timeline-panel",
+    position: "top"
+  },
+  {
+    title: "INCOIS ERDDAP Live-Sync 🛰️",
+    desc: "Click 'Trigger Live API Fetch' to request real-time satellite daily readings directly from federal servers via a CORS-bypassing Vite proxy.",
+    highlightId: "btn-fetch-live",
+    position: "bottom"
+  }
+];
+
+// 2D Array to store 432 cell layer references
+const cellLayers = Array(24).fill(null).map(() => Array(18).fill(null));
 
 // Initialize Application
 function init() {
   // Initialize Leaflet Map
   map = L.map('map', {
-    zoomControl: false,
+    zoomControl: true, // Enable zoom buttons
     attributionControl: false
   }).setView([10.4, 76.0], 8);
 
@@ -178,19 +109,97 @@ function init() {
     minZoom: 6
   }).addTo(map);
 
+  // Add Leaflet's built-in scale bar in the bottom-left
+  L.control.scale({
+    position: 'bottomleft',
+    metric: true,
+    imperial: false
+  }).addTo(map);
+
   // Constrain the map bounds to the Kerala region
   map.setMaxBounds([
     [LAT_MIN - 1.0, LNG_MIN - 1.0],
     [LAT_MAX + 1.0, LNG_MAX + 1.0]
   ]);
 
+  // Instantiate Leaflet layer groups
+  gridLayerGroup = L.layerGroup().addTo(map);
+  conservationLayerGroup = L.layerGroup().addTo(map);
+  portsLayerGroup = L.layerGroup().addTo(map);
+  currentsLayerGroup = L.layerGroup().addTo(map);
+  gridLinesLayerGroup = L.layerGroup().addTo(map);
+
+  // Set up hover highlight layer
+  hoverOutline = L.rectangle([[0, 0], [0, 0]], {
+    color: 'rgba(24, 99, 220, 0.6)',
+    weight: 1.5,
+    fillColor: 'rgba(24, 99, 220, 0.05)',
+    fillOpacity: 0.1,
+    interactive: false
+  });
+
+  // Set up selection highlight layer
+  selectedOutline = L.rectangle([[0, 0], [0, 0]], {
+    color: 'var(--primary-color)',
+    weight: 2.5,
+    fillColor: 'rgba(0, 0, 0, 0)',
+    fillOpacity: 0,
+    interactive: false
+  });
+
+  // Set up vessel route path layer
+  routePolyline = L.polyline([], {
+    color: 'var(--action-blue)',
+    weight: 3.5,
+    lineCap: 'round',
+    lineJoin: 'round',
+    interactive: false
+  });
+
+  // Set up animated vessel marker
+  vesselMarker = L.circleMarker([0, 0], {
+    radius: 4.5,
+    color: 'white',
+    weight: 1.5,
+    fillColor: 'var(--action-blue)',
+    fillOpacity: 1,
+    interactive: false
+  });
+
+  // Create grid cell rectangles (24x18 = 432 cells)
+  const latStep = (LAT_MAX - LAT_MIN) / 24;
+  const lngStep = (LNG_MAX - LNG_MIN) / 18;
+  const canvasRenderer = L.canvas(); // High-performance canvas vector renderer
+
+  for (let r = 0; r < 24; r++) {
+    const lat = LAT_MAX - (r * latStep) - (latStep / 2);
+    for (let c = 0; c < 18; c++) {
+      const lng = LNG_MIN + (c * lngStep) + (lngStep / 2);
+      
+      const bounds = [
+        [lat - latStep / 2, lng - lngStep / 2],
+        [lat + latStep / 2, lng + lngStep / 2]
+      ];
+      
+      const rect = L.rectangle(bounds, {
+        renderer: canvasRenderer,
+        fillColor: 'rgba(0, 0, 0, 0)',
+        fillOpacity: 0,
+        color: 'rgba(255, 255, 255, 0.08)',
+        weight: 0.5,
+        interactive: false // Mousemove is handled at map level for fast spatial lookups
+      }).addTo(gridLayerGroup);
+      
+      cellLayers[r][c] = rect;
+    }
+  }
+
+  // Draw grid lines and axis ticks
+  initGridLines();
+
   setupEventListeners();
   updateGrid();
-  handleResize();
 
-  // Redraw canvas whenever Leaflet pans or zooms
-  map.on('zoom move', draw);
-  
   // Set default telemetry selection (Munambam harbor)
   const munambamPort = FISHING_HARBORS.find(h => h.id === 'munambam');
   if (munambamPort) {
@@ -212,46 +221,296 @@ function init() {
     updateTelemetryCard(defaultCell, true);
   }
 
-  showToast("Thalassa workspace initialized. Leaflet background loaded.");
+  // Populate floating HTML legend
+  updateMapLegend();
+
+  // Expose global variables to window for easy debugging and evaluation
+  window.map = map;
+  window.gridData = gridData;
+  window.selectedCell = selectedCell;
+  window.liveData = liveData;
+
+  showToast("Thalassa workspace initialized. Native Leaflet layers active.");
   
-  // Start the render loop
+  // Start the animation frame loop
   requestAnimationFrame(tick);
 }
 
 // Tick loop for real-time visual pulses and vessel transit animation
 function tick() {
   pulseState = (pulseState + 0.05) % (2 * Math.PI);
-  if (optimizedRoute) {
+  
+  if (optimizedRoute && vesselMarker && map.hasLayer(vesselMarker)) {
     vesselProgress = (vesselProgress + 0.002) % 1.0;
+    
+    // Animate vessel coordinates along route path
+    const vPos = getPositionAlongPath(optimizedRoute.path, vesselProgress);
+    if (vPos) {
+      vesselMarker.setLatLng([vPos.lat, vPos.lng]);
+    }
   }
-  draw();
+  
+  // Pulse selected port marker size
+  if (map && portsLayerGroup) {
+    portsLayerGroup.eachLayer(layer => {
+      const latlng = layer.getLatLng();
+      const port = FISHING_HARBORS.find(h => h.lat === latlng.lat && h.lng === latlng.lng);
+      if (port && port.id === selectedPort) {
+        layer.setRadius(5 + 3 * Math.sin(pulseState));
+      }
+    });
+  }
+
+  // Pulse conservation zones opacity
+  if (map && conservationLayerGroup && activeOverlays.mpa) {
+    const opacityScale = 0.5 + 0.2 * Math.sin(pulseState);
+    conservationLayerGroup.eachLayer(layer => {
+      layer.setStyle({
+        opacity: opacityScale
+      });
+    });
+  }
+
   requestAnimationFrame(tick);
+}
+
+// Initialize lat/lng coordinate lines and ticks in Leaflet
+function initGridLines() {
+  gridLinesLayerGroup.clearLayers();
+  
+  // Latitude grid lines
+  for (let lat = 8.5; lat < 12.8; lat += 1.0) {
+    const line = L.polyline([[lat, LNG_MIN], [lat, LNG_MAX]], {
+      color: 'rgba(0, 0, 0, 0.04)',
+      weight: 1,
+      interactive: false
+    });
+    line.addTo(gridLinesLayerGroup);
+    
+    // Add grid axis label
+    const labelMarker = L.marker([lat, LNG_MIN + 0.05], {
+      icon: L.divIcon({
+        className: 'grid-axis-label',
+        html: `<span style="font-family: var(--font-mono); font-size: 8px; color: rgba(23, 23, 28, 0.4);">${lat.toFixed(1)}°N</span>`,
+        iconSize: [40, 10],
+        iconAnchor: [0, 5]
+      }),
+      interactive: false
+    });
+    labelMarker.addTo(gridLinesLayerGroup);
+  }
+
+  // Longitude grid lines
+  for (let lng = 75.0; lng < 77.5; lng += 1.0) {
+    const line = L.polyline([[LAT_MIN, lng], [LAT_MAX, lng]], {
+      color: 'rgba(0, 0, 0, 0.04)',
+      weight: 1,
+      interactive: false
+    });
+    line.addTo(gridLinesLayerGroup);
+    
+    const labelMarker = L.marker([LAT_MIN + 0.05, lng], {
+      icon: L.divIcon({
+        className: 'grid-axis-label',
+        html: `<span style="font-family: var(--font-mono); font-size: 8px; color: rgba(23, 23, 28, 0.4);">${lng.toFixed(1)}°E</span>`,
+        iconSize: [40, 10],
+        iconAnchor: [20, 0]
+      }),
+      interactive: false
+    });
+    labelMarker.addTo(gridLinesLayerGroup);
+  }
 }
 
 // Regenerate grid matrices based on state
 function updateGrid() {
   gridData = generateDigitalTwinGrid(dayOfYear, liveData);
   
+  // Link gridData cell items to their respective layer shapes
+  gridData.forEach(cell => {
+    cell.rectLayer = cellLayers[cell.row][cell.col];
+  });
+
+  // Re-style grid cells and vector layers on Leaflet
+  updateMapLayers();
+
   // Recalculate route if destination exists
   if (selectedCell) {
     const newCell = gridData.find(c => c.row === selectedCell.row && c.col === selectedCell.col);
     if (newCell) {
       selectedCell = newCell;
-      optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+      optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
       updateTelemetryCard(selectedCell, true);
+
+      const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
+      routePolyline.setLatLngs(pathCoords);
+      if (!map.hasLayer(routePolyline)) {
+        routePolyline.addTo(map);
+      }
+      if (!map.hasLayer(vesselMarker)) {
+        vesselMarker.addTo(map);
+      }
     }
+  } else {
+    if (map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+    if (map.hasLayer(vesselMarker)) map.removeLayer(vesselMarker);
   }
 
   updateSidebarLists();
 }
 
+// Redraw styles of native Leaflet vectors
+function updateMapLayers() {
+  const currentMonth = Math.floor((dayOfYear / 365) * 12) + 1;
+
+  // 1. Update Grid Cells
+  gridData.forEach(cell => {
+    const rect = cell.rectLayer;
+    if (!rect) return;
+
+    if (cell.isLand) {
+      rect.setStyle({
+        fillColor: 'rgba(0, 0, 0, 0)',
+        fillOpacity: 0,
+        color: 'rgba(0,0,0,0)',
+        weight: 0
+      });
+      return;
+    }
+
+    let fillColor = 'rgba(0, 0, 0, 0)';
+    let fillOpacity = 0;
+
+    if (currentMode === 'fisherman') {
+      if (activeOverlays.sst && !activeOverlays.chl) {
+        const alpha = Math.max(0.1, (cell.sst - 25) / 6.0);
+        fillColor = 'rgb(239, 108, 0)';
+        fillOpacity = alpha * 0.35;
+      } else if (activeOverlays.chl && !activeOverlays.sst) {
+        const alpha = Math.min(1.0, Math.max(0.1, cell.chlorophyll / 5.0));
+        fillColor = 'rgb(46, 125, 50)';
+        fillOpacity = alpha * 0.35;
+      } else if (activeOverlays.sst && activeOverlays.chl) {
+        const alpha = Math.max(0.1, cell.fishingScore / 100);
+        fillColor = 'rgb(24, 99, 220)';
+        fillOpacity = alpha * 0.35;
+      }
+    } else {
+      if (activeOverlays.mpa && cell.conservationScore > 30) {
+        const alpha = Math.max(0.15, cell.conservationScore / 100);
+        fillColor = cell.isRestrictedZone ? 'rgb(179, 0, 0)' : 'rgb(255, 119, 89)';
+        fillOpacity = cell.isRestrictedZone ? alpha * 0.45 : alpha * 0.35;
+      }
+    }
+
+    rect.setStyle({
+      fillColor: fillColor,
+      fillOpacity: fillOpacity,
+      color: fillColor !== 'rgba(0,0,0,0)' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0,0,0,0)',
+      weight: fillColor !== 'rgba(0,0,0,0)' ? 0.5 : 0
+    });
+  });
+
+  // 2. Update Conservation Zones
+  conservationLayerGroup.clearLayers();
+  if (activeOverlays.mpa) {
+    CONSERVATION_ZONES.forEach(zone => {
+      const latLngs = zone.polygon.map(pt => [pt.lat, pt.lng]);
+      const isActiveBan = zone.restrictedMonths.includes(currentMonth);
+      const color = zone.severityLevel === 'high' ? 'rgb(179, 0, 0)' : 'rgb(255, 119, 89)';
+      
+      const poly = L.polygon(latLngs, {
+        color: color,
+        weight: 1.5,
+        dashArray: '4, 4',
+        fillColor: color,
+        fillOpacity: isActiveBan ? 0.15 : 0.05,
+        interactive: true
+      });
+      
+      poly.bindTooltip(`<strong>${zone.name}</strong><br>${zone.description}`, { sticky: true });
+      poly.addTo(conservationLayerGroup);
+    });
+  }
+
+  // 3. Update Harbors/Ports
+  portsLayerGroup.clearLayers();
+  FISHING_HARBORS.forEach(port => {
+    const isSelected = port.id === selectedPort;
+    const color = isSelected ? 'var(--action-blue)' : 'var(--deep-green)';
+    
+    const marker = L.circleMarker([port.lat, port.lng], {
+      radius: isSelected ? 8 : 5,
+      color: 'var(--canvas)',
+      weight: 1.5,
+      fillColor: color,
+      fillOpacity: 1,
+      interactive: true
+    });
+
+    marker.bindTooltip(`<strong>${port.name}</strong><br>District: ${port.district}<br>Active Vessels: ${port.activeVessels}`, { sticky: true });
+    
+    marker.on('click', () => {
+      const selectEl = document.getElementById('port-selector');
+      selectEl.value = port.id;
+      selectedPort = port.id;
+      if (selectedCell) {
+        optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
+        updateRouteTelemetry();
+      }
+      updateGrid();
+    });
+
+    marker.addTo(portsLayerGroup);
+  });
+
+  // 4. Update Currents Vectors
+  currentsLayerGroup.clearLayers();
+  if (activeOverlays.currents) {
+    gridData.forEach(cell => {
+      if (cell.isLand) return;
+      
+      const start = [cell.lat, cell.lng];
+      
+      // Calculate end point of current vector based on speed and dir
+      const scale = 0.05 * cell.currentSpeed;
+      const angleRad = (cell.currentDir * Math.PI) / 180;
+      const end = [
+        cell.lat - Math.cos(angleRad) * scale,
+        cell.lng + Math.sin(angleRad) * scale
+      ];
+      
+      const line = L.polyline([start, end], {
+        color: 'rgba(24, 99, 220, 0.45)',
+        weight: 1.2,
+        interactive: false
+      });
+      line.addTo(currentsLayerGroup);
+      
+      // Draw arrowhead by adding short lines
+      const headlen = scale * 0.25;
+      const leftArrow = [
+        end[0] + Math.cos(angleRad - Math.PI / 6) * headlen,
+        end[1] - Math.sin(angleRad - Math.PI / 6) * headlen
+      ];
+      const rightArrow = [
+        end[0] + Math.cos(angleRad + Math.PI / 6) * headlen,
+        end[1] - Math.sin(angleRad + Math.PI / 6) * headlen
+      ];
+      
+      L.polyline([end, leftArrow], { color: 'rgba(24, 99, 220, 0.45)', weight: 1.2 }).addTo(currentsLayerGroup);
+      L.polyline([end, rightArrow], { color: 'rgba(24, 99, 220, 0.45)', weight: 1.2 }).addTo(currentsLayerGroup);
+    });
+  }
+}
+
 // Setup Interaction Listeners
 function setupEventListeners() {
   // Mode toggles
-  document.getElementById('mode-fisherman').addEventListener('click', (e) => {
+  document.getElementById('mode-fisherman').addEventListener('click', () => {
     switchPerspective('fisherman');
   });
-  document.getElementById('mode-conservationist').addEventListener('click', (e) => {
+  document.getElementById('mode-conservationist').addEventListener('click', () => {
     switchPerspective('conservationist');
   });
 
@@ -266,9 +525,9 @@ function setupEventListeners() {
   portSelect.addEventListener('change', (e) => {
     selectedPort = e.target.value;
     if (selectedCell) {
-      optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+      optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
     }
-    updateSidebarLists();
+    updateGrid();
   });
 
   // Timeline slider
@@ -285,22 +544,33 @@ function setupEventListeners() {
   // Live API Fetch trigger
   document.getElementById('btn-fetch-live').addEventListener('click', triggerLiveApiFetch);
 
-  // Language button listeners
-  const langBtns = document.querySelectorAll('.lang-btn');
-  langBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      langBtns.forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      const lang = e.target.getAttribute('data-lang');
-      translateUI(lang);
-    });
+  // Preset Scenario selectors
+  document.getElementById('preset-monsoon').addEventListener('click', () => {
+    applyPresetScenario('monsoon');
   });
+  document.getElementById('preset-winter').addEventListener('click', () => {
+    applyPresetScenario('winter');
+  });
+  document.getElementById('preset-live').addEventListener('click', () => {
+    applyPresetScenario('live');
+  });
+
+  // Guided Map Tour buttons
+  document.getElementById('btn-start-tour').addEventListener('click', startTour);
+  document.getElementById('tour-close-btn').addEventListener('click', endTour);
+  document.getElementById('tour-next-btn').addEventListener('click', nextTourStep);
+  document.getElementById('tour-prev-btn').addEventListener('click', prevTourStep);
 
   // Leaflet Map events
   map.on('mousemove', handleMapMouseMove);
   map.on('click', handleMapClick);
+
   map.on('mouseout', () => {
+    hoveredCell = null;
     lastHoveredCell = null;
+    if (map.hasLayer(hoverOutline)) {
+      map.removeLayer(hoverOutline);
+    }
     if (selectedCell) {
       updateTelemetryCard(selectedCell, true);
     } else {
@@ -326,19 +596,167 @@ function setupEventListeners() {
     }
   });
 
-  // Hover glow coordinate updates for info-cards
-  document.addEventListener('mousemove', (e) => {
-    const cards = document.querySelectorAll('.info-card');
-    cards.forEach(card => {
-      const rect = card.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      card.style.setProperty('--mouse-x', `${x}px`);
-      card.style.setProperty('--mouse-y', `${y}px`);
-    });
+  window.addEventListener('resize', () => {
+    if (map) {
+      map.invalidateSize();
+    }
+  });
+}
+
+// Apply Scenario Preset configurations
+function applyPresetScenario(type) {
+  document.getElementById('preset-monsoon').classList.remove('active');
+  document.getElementById('preset-winter').classList.remove('active');
+  document.getElementById('preset-live').classList.remove('active');
+  
+  if (type === 'monsoon') {
+    document.getElementById('preset-monsoon').classList.add('active');
+    dayOfYear = 200; // July
+    document.getElementById('timeline-slider').value = dayOfYear;
+    updateTimelineLabel();
+    
+    // Switch to Fisherman Dashboard
+    switchPerspective('fisherman');
+    
+    // Enable SST + Chlorophyll Overlays
+    activeOverlays.sst = true;
+    activeOverlays.chl = true;
+    activeOverlays.currents = false;
+    activeOverlays.mpa = true;
+    
+    document.getElementById('layer-sst').classList.add('active');
+    document.getElementById('layer-chl').classList.add('active');
+    document.getElementById('layer-currents').classList.remove('active');
+    document.getElementById('layer-mpa').classList.add('active');
+
+    // Pan map to Kochi region
+    map.setView([10.0, 76.0], 9);
+    
+    showToast("Scenario: July Monsoon Upwelling. Plankton blooms visible.", "green");
+  } else if (type === 'winter') {
+    document.getElementById('preset-winter').classList.add('active');
+    dayOfYear = 350; // December
+    document.getElementById('timeline-slider').value = dayOfYear;
+    updateTimelineLabel();
+    
+    // Switch to Conservation Dashboard
+    switchPerspective('conservationist');
+    
+    // Enable MPA only
+    activeOverlays.sst = false;
+    activeOverlays.chl = false;
+    activeOverlays.currents = false;
+    activeOverlays.mpa = true;
+    
+    document.getElementById('layer-sst').classList.remove('active');
+    document.getElementById('layer-chl').classList.remove('active');
+    document.getElementById('layer-currents').classList.remove('active');
+    document.getElementById('layer-mpa').classList.add('active');
+
+    // Pan map to Kadalundi turtle nesting zone (Kozhikode region)
+    map.setView([11.15, 75.8], 9);
+    
+    showToast("Scenario: December Winter Spawning. Olive Ridley nesting protection active.", "green");
+  } else if (type === 'live') {
+    document.getElementById('preset-live').classList.add('active');
+    triggerLiveApiFetch();
+  }
+}
+
+// Guided Map Tour State Machine
+function startTour() {
+  tourActive = true;
+  tourStep = 0;
+  document.getElementById('tour-card').style.display = 'flex';
+  showTourStep();
+  showToast("Guided tour started. Follow the highlighted panels.");
+}
+
+function endTour() {
+  tourActive = false;
+  document.getElementById('tour-card').style.display = 'none';
+  
+  // Clear highlights
+  tourSteps.forEach(step => {
+    const el = document.getElementById(step.highlightId);
+    if (el) el.classList.remove('tour-highlight');
+  });
+  
+  showToast("Guided tour completed.");
+}
+
+function showTourStep() {
+  if (tourStep < 0 || tourStep >= tourSteps.length) {
+    endTour();
+    return;
+  }
+  
+  const step = tourSteps[tourStep];
+  
+  // Update Tour Card text content
+  document.getElementById('tour-step-label').textContent = `GUIDED TOUR: STEP ${tourStep + 1}/${tourSteps.length}`;
+  document.getElementById('tour-title').textContent = step.title;
+  document.getElementById('tour-description').textContent = step.desc;
+  
+  // Set button text states
+  document.getElementById('tour-prev-btn').disabled = (tourStep === 0);
+  document.getElementById('tour-next-btn').textContent = (tourStep === tourSteps.length - 1) ? "Finish" : "Next";
+  
+  // Manage CSS highlight classes
+  tourSteps.forEach((s, idx) => {
+    const el = document.getElementById(s.highlightId);
+    if (el) {
+      if (idx === tourStep) {
+        el.classList.add('tour-highlight');
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        el.classList.remove('tour-highlight');
+      }
+    }
   });
 
-  window.addEventListener('resize', handleResize);
+  // Reposition Tour Overlay relative to target panel
+  const targetEl = document.getElementById(step.highlightId);
+  const tourCard = document.getElementById('tour-card');
+  if (targetEl && tourCard) {
+    const rect = targetEl.getBoundingClientRect();
+    
+    if (step.position === 'bottom') {
+      tourCard.style.top = `${rect.bottom + window.scrollY + 12}px`;
+      tourCard.style.left = `${rect.left + window.scrollX}px`;
+      tourCard.style.bottom = 'auto';
+      tourCard.style.right = 'auto';
+    } else if (step.position === 'top') {
+      tourCard.style.top = 'auto';
+      tourCard.style.bottom = `${window.innerHeight - rect.top + 12}px`;
+      tourCard.style.left = `${rect.left + window.scrollX}px`;
+      tourCard.style.right = 'auto';
+    } else if (step.position === 'left') {
+      tourCard.style.top = `${rect.top + window.scrollY}px`;
+      tourCard.style.left = 'auto';
+      tourCard.style.right = `${window.innerWidth - rect.left + 12}px`;
+      tourCard.style.bottom = 'auto';
+    } else {
+      tourCard.style.bottom = '80px';
+      tourCard.style.left = '40px';
+      tourCard.style.top = 'auto';
+      tourCard.style.right = 'auto';
+    }
+  }
+}
+
+function nextTourStep() {
+  tourStep++;
+  if (tourStep >= tourSteps.length) {
+    endTour();
+  } else {
+    showTourStep();
+  }
+}
+
+function prevTourStep() {
+  tourStep--;
+  showTourStep();
 }
 
 // Toggle play timeline animation
@@ -403,28 +821,8 @@ function setupLayerToggle(elementId, key) {
     } else {
       btn.classList.remove('active');
     }
-  });
-}
-
-// Handle Canvas Resize
-function handleResize() {
-  if (map) {
-    map.invalidateSize();
-  }
-  const parent = canvas.parentElement;
-  canvas.width = parent.clientWidth;
-  canvas.height = parent.clientHeight;
-}
-
-// Retrieve grid cell coordinates based on mouse position
-function getCellFromCoords(x, y) {
-  const lng = unprojectX(x, canvas.width);
-  const lat = unprojectY(y, canvas.height);
-
-  return gridData.find(cell => {
-    const latStep = (LAT_MAX - LAT_MIN) / 24; // Grid rows
-    const lngStep = (LNG_MAX - LNG_MIN) / 18; // Grid cols
-    return Math.abs(cell.lat - lat) <= (latStep / 2) && Math.abs(cell.lng - lng) <= (lngStep / 2);
+    updateGrid();
+    updateMapLegend();
   });
 }
 
@@ -442,8 +840,21 @@ function handleMapMouseMove(e) {
   
   if (cell !== lastHoveredCell) {
     lastHoveredCell = cell;
+    hoveredCell = cell;
     if (cell) {
       updateTelemetryCard(cell);
+      
+      // Update hover outline rectangle bounds
+      const latStep = (LAT_MAX - LAT_MIN) / 24;
+      const lngStep = (LNG_MAX - LNG_MIN) / 18;
+      const bounds = [
+        [cell.lat - latStep/2, cell.lng - lngStep/2],
+        [cell.lat + latStep/2, cell.lng + lngStep/2]
+      ];
+      hoverOutline.setBounds(bounds);
+      if (!map.hasLayer(hoverOutline)) {
+        hoverOutline.addTo(map);
+      }
       
       if (mouseMoveDebounceTimer) {
         clearTimeout(mouseMoveDebounceTimer);
@@ -456,6 +867,10 @@ function handleMapMouseMove(e) {
             fetchAndCacheForecast(cell);
           }, 350);
         }
+      }
+    } else {
+      if (map.hasLayer(hoverOutline)) {
+        map.removeLayer(hoverOutline);
       }
     }
   }
@@ -476,12 +891,35 @@ function handleMapClick(e) {
     if (cell.isLand) return; // Skip land clicks
     
     selectedCell = cell;
-    optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+    optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
     vesselProgress = 0; // Reset transit animation
     
     document.getElementById('route-section').style.display = 'block';
     updateRouteTelemetry();
     
+    // Update selected outline bounds
+    const latStep = (LAT_MAX - LAT_MIN) / 24;
+    const lngStep = (LNG_MAX - LNG_MIN) / 18;
+    const bounds = [
+      [cell.lat - latStep/2, cell.lng - lngStep/2],
+      [cell.lat + latStep/2, cell.lng + lngStep/2]
+    ];
+    selectedOutline.setBounds(bounds);
+    if (!map.hasLayer(selectedOutline)) {
+      selectedOutline.addTo(map);
+    }
+
+    // Set route coordinates
+    const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
+    routePolyline.setLatLngs(pathCoords);
+    if (!map.hasLayer(routePolyline)) {
+      routePolyline.addTo(map);
+    }
+    
+    if (!map.hasLayer(vesselMarker)) {
+      vesselMarker.addTo(map);
+    }
+
     updateGrid();
     showToast(`Target coordinate locked at: ${cell.lat.toFixed(3)}°N, ${cell.lng.toFixed(3)}°E`);
   }
@@ -493,6 +931,17 @@ async function triggerLiveApiFetch() {
   btn.disabled = true;
   btn.textContent = "Querying APIs...";
   showToast("Accessing INCOIS ERDDAP servers. Requesting latest chlorophyll and SST indices...");
+
+  // Update timeline to today's date
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  const diff = now - start;
+  const oneDay = 1000 * 60 * 60 * 24;
+  const todayDayOfYear = Math.floor(diff / oneDay);
+  dayOfYear = todayDayOfYear;
+  
+  document.getElementById('timeline-slider').value = dayOfYear;
+  updateTimelineLabel();
 
   try {
     const [sstApiData, chlApiData] = await Promise.all([
@@ -515,10 +964,16 @@ async function triggerLiveApiFetch() {
         document.getElementById('layer-chl').classList.add('active');
       }
     } else {
-      showToast("Live servers uncontactable or blocked by CORS. Running local simulation.", 'orange');
+      showToast("Live servers uncontactable or blocked by CORS. Running local simulation for today.", 'orange');
     }
     
     updateGrid();
+    
+    // Update route calculation if a target cell is locked
+    if (selectedCell) {
+      optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
+      updateRouteTelemetry();
+    }
   } catch (err) {
     showToast("API synchronization error. Loaded offline simulator.", 'red');
   } finally {
@@ -533,36 +988,42 @@ function switchPerspective(mode) {
   
   const btnFish = document.getElementById('mode-fisherman');
   const btnCons = document.getElementById('mode-conservationist');
+  const badge = document.getElementById('perspective-badge');
+  const heading = document.getElementById('main-perspective-heading');
+  const desc = document.getElementById('main-perspective-desc');
+  const listTitle = document.getElementById('dynamic-list-title');
 
   if (mode === 'fisherman') {
     btnFish.classList.add('active');
     btnCons.classList.remove('active');
+    badge.textContent = "FISHERMAN VIEW";
+    badge.style.background = 'var(--pale-blue)';
+    badge.style.color = 'var(--action-blue)';
+    heading.textContent = "Optimized Fishing & Catch Advisories";
+    desc.textContent = "Real-time oceanographic routing system prioritizing harvest yields based on sea surface temperature and primary productivity chlorophyll values.";
+    listTitle.textContent = "HIGH YIELD FISHING ZONES";
   } else {
     btnFish.classList.remove('active');
     btnCons.classList.add('active');
+    badge.textContent = "CONSERVATION VIEW";
+    badge.style.background = 'var(--pale-green)';
+    badge.style.color = 'var(--deep-green)';
+    heading.textContent = "Marine Reserves & Spawning Warnings";
+    desc.textContent = "Monitoring ecological stressors, spawning calendar bans, and historical overfishing indicators to preserve habitats and restrict sensitive zones.";
+    listTitle.textContent = "CRITICAL HABITATS & ACTIVE RESTRICTIONS";
   }
-
-  translateUI(currentLang);
 
   selectedCell = null;
   optimizedRoute = null;
   document.getElementById('route-section').style.display = 'none';
 
+  if (map.hasLayer(selectedOutline)) map.removeLayer(selectedOutline);
+  if (map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+  if (map.hasLayer(vesselMarker)) map.removeLayer(vesselMarker);
+
   updateGrid();
+  updateMapLegend();
   showToast(`Switched perspective: ${mode.toUpperCase()} mode.`);
-}
-
-// Draw cell selection highlight box
-function drawCellHighlight(cell, strokeStyle = 'var(--primary-color)', lineWidth = 3) {
-  const latStep = (LAT_MAX - LAT_MIN) / 24;
-  const lngStep = (LNG_MAX - LNG_MIN) / 18;
-
-  const topLeft = map.latLngToContainerPoint([cell.lat + latStep / 2, cell.lng - lngStep / 2]);
-  const bottomRight = map.latLngToContainerPoint([cell.lat - latStep / 2, cell.lng + lngStep / 2]);
-
-  ctx.strokeStyle = strokeStyle;
-  ctx.lineWidth = lineWidth;
-  ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
 }
 
 // Update telemetry details panel
@@ -628,11 +1089,12 @@ function displayForecastData(cell, forecast) {
   }
 }
 
-// Update Matsya AI Inference Core Section in UI
 function updateMatsyaAISec(cell, liveForecast = null) {
   if (!cell || cell.isLand) {
-    document.getElementById('telemetry-twin-x').textContent = '--';
-    document.getElementById('telemetry-twin-y').textContent = '--';
+    const twinX = document.getElementById('telemetry-twin-x');
+    const twinY = document.getElementById('telemetry-twin-y');
+    if (twinX) twinX.textContent = '--';
+    if (twinY) twinY.textContent = '--';
     document.getElementById('eco-risk-label').textContent = '--';
     document.getElementById('eco-risk-bar').style.width = '0%';
     document.getElementById('eco-risk-badge').textContent = '--';
@@ -654,8 +1116,10 @@ function updateMatsyaAISec(cell, liveForecast = null) {
 
   // 1. Digital Twin Coordinate Projection (X%, Y%) using projectTelemetryToPercent
   const proj = projectTelemetryToPercent(cell.lat, cell.lng);
-  document.getElementById('telemetry-twin-x').textContent = `${proj.xPercent}%`;
-  document.getElementById('telemetry-twin-y').textContent = `${proj.yPercent}%`;
+  const twinX = document.getElementById('telemetry-twin-x');
+  const twinY = document.getElementById('telemetry-twin-y');
+  if (twinX) twinX.textContent = `${proj.xPercent.toFixed(1)}%`;
+  if (twinY) twinY.textContent = `${proj.yPercent.toFixed(1)}%`;
 
   // Fetch values from cell or override with live forecast
   let waveHeightVal = cell.waveHeight || 0;
@@ -795,7 +1259,7 @@ async function fetchAndCacheForecast(cell) {
   }
 }
 
-// Draw mini historical sparkline for hovered grid coordinate (dual parameter trends)
+// Draw mini historical sparkline for hovered grid coordinate (sidebar canvas)
 function drawMiniTrendChart(cell) {
   const chartCanvas = document.getElementById('mini-trend-chart');
   if (!chartCanvas) return;
@@ -808,21 +1272,12 @@ function drawMiniTrendChart(cell) {
 
   // Generate 12 monthly points
   const sstValues = [];
-  const chlValues = [];
   for (let m = 0; m < 12; m++) {
     const day = Math.round((m / 12) * 365) + 15;
-    
-    // SST seasonal simulation (peaks in April-May, drops in monsoon July-August)
     const seasonalSstDiff = 2.0 * Math.sin((day - 100) * (2 * Math.PI / 365));
     const coastalCooling = 0.5 * Math.sin(cell.minDistanceToCoast / 10);
     const sst = 27.5 + seasonalSstDiff - coastalCooling;
     sstValues.push(sst);
-
-    // Chlorophyll-a simulation (spikes during monsoon upwelling in July-September)
-    const seasonalChlDiff = 2.0 * Math.max(0, Math.sin((day - 170) * (2 * Math.PI / 365)));
-    const coastalChlFactor = Math.max(0.2, 5.0 / (cell.minDistanceToCoast + 1));
-    const chlorophyll = 0.3 + seasonalChlDiff * coastalChlFactor;
-    chlValues.push(chlorophyll);
   }
 
   // Draw chart grids
@@ -833,90 +1288,66 @@ function drawMiniTrendChart(cell) {
   mctx.lineTo(w, h / 2);
   mctx.stroke();
 
-  // 1. Plot SST Line (Min: 24C, Max: 32C)
-  const sstMin = 24.0;
-  const sstMax = 32.0;
-  const sstPoints = sstValues.map((val, idx) => {
+  // Project points
+  const minVal = 24.0;
+  const maxVal = 32.0;
+  const points = sstValues.map((val, idx) => {
     const x = (idx / 11) * w;
-    const y = h - ((val - sstMin) / (sstMax - sstMin)) * h;
+    const y = h - ((val - minVal) / (maxVal - minVal)) * h;
     return { x, y };
   });
 
+  // Draw curve
   mctx.beginPath();
-  mctx.moveTo(sstPoints[0].x, sstPoints[0].y);
-  for (let i = 1; i < sstPoints.length; i++) {
-    mctx.lineTo(sstPoints[i].x, sstPoints[i].y);
+  mctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) {
+    mctx.lineTo(points[i].x, points[i].y);
   }
   mctx.strokeStyle = 'var(--action-blue)';
   mctx.lineWidth = 1.5;
   mctx.stroke();
 
-  // 2. Plot Chlorophyll Line (Min: 0.0, Max: 5.0)
-  const chlMin = 0.0;
-  const chlMax = 5.0;
-  const chlPoints = chlValues.map((val, idx) => {
-    const x = (idx / 11) * w;
-    const y = h - ((val - chlMin) / (chlMax - chlMin)) * h;
-    return { x, y };
-  });
-
-  mctx.beginPath();
-  mctx.moveTo(chlPoints[0].x, chlPoints[0].y);
-  for (let i = 1; i < chlPoints.length; i++) {
-    mctx.lineTo(chlPoints[i].x, chlPoints[i].y);
-  }
-  mctx.strokeStyle = '#2e7d32'; // Deep Green
-  mctx.lineWidth = 1.5;
-  mctx.stroke();
-
-  // Draw current active month markers
+  // Draw current active month marker
   const currentMonthIdx = Math.max(0, Math.min(11, Math.floor((dayOfYear / 365) * 12)));
-  
-  // SST Marker
-  const activeSstPt = sstPoints[currentMonthIdx];
-  if (activeSstPt) {
+  const activePt = points[currentMonthIdx];
+  if (activePt) {
     mctx.beginPath();
-    mctx.arc(activeSstPt.x, activeSstPt.y, 4, 0, 2 * Math.PI);
+    mctx.arc(activePt.x, activePt.y, 4, 0, 2 * Math.PI);
     mctx.fillStyle = 'var(--coral)';
     mctx.strokeStyle = 'white';
     mctx.lineWidth = 1.5;
     mctx.fill();
     mctx.stroke();
-  }
 
-  // Chlorophyll Marker
-  const activeChlPt = chlPoints[currentMonthIdx];
-  if (activeChlPt) {
-    mctx.beginPath();
-    mctx.arc(activeChlPt.x, activeChlPt.y, 4, 0, 2 * Math.PI);
-    mctx.fillStyle = 'var(--deep-green)';
-    mctx.strokeStyle = 'white';
-    mctx.lineWidth = 1.5;
-    mctx.fill();
-    mctx.stroke();
+    // Text details
+    mctx.fillStyle = 'var(--cohere-black)';
+    mctx.font = '9px var(--font-mono)';
+    mctx.fillText(`${sstValues[currentMonthIdx].toFixed(1)}°C`, activePt.x - 12, activePt.y - 8);
   }
-
-  // Draw Text Overlays / Legends in the corners
-  mctx.fillStyle = 'var(--cohere-black)';
-  mctx.font = 'bold 9px var(--font-mono)';
-  mctx.textAlign = 'left';
-  mctx.fillText(`SST: ${sstValues[currentMonthIdx].toFixed(1)}°C`, 6, 12);
-  
-  mctx.textAlign = 'right';
-  mctx.fillText(`Chl: ${chlValues[currentMonthIdx].toFixed(2)} mg/m³`, w - 6, 12);
 }
 
-// Update route text details
+// Update route text details with Standard vs Deflected Comparison
 function updateRouteTelemetry() {
   if (!optimizedRoute) return;
   const title = document.getElementById('route-title');
-  const dist = document.getElementById('route-distance');
-  const time = document.getElementById('route-time');
-
   const activePort = FISHING_HARBORS.find(h => h.id === selectedPort);
   title.textContent = `${activePort.name.split(' ')[0]} to Target Grid`;
-  dist.textContent = `${optimizedRoute.distanceKM} km`;
-  time.textContent = `${optimizedRoute.estTimeHours} hrs`;
+
+  // Standard Route (Non-Compliant) Metrics
+  document.getElementById('route-std-distance').textContent = `${optimizedRoute.stdDistanceKM} km`;
+  document.getElementById('route-std-time').textContent = `${optimizedRoute.stdTimeHours} hrs`;
+  const stdStatus = document.getElementById('route-std-status');
+  if (optimizedRoute.cutsSpawningBan) {
+    stdStatus.textContent = "❌ Cuts Spawning Ban";
+    stdStatus.className = "comparison-status status-error";
+  } else {
+    stdStatus.textContent = "✅ Eco-Compliant";
+    stdStatus.className = "comparison-status status-success";
+  }
+
+  // Thalassa Route (Optimized Compliant) Metrics
+  document.getElementById('route-opt-distance').textContent = `${optimizedRoute.distanceKM} km`;
+  document.getElementById('route-opt-time').textContent = `${optimizedRoute.estTimeHours} hrs`;
 }
 
 // Populate the sidebar list items dynamically
@@ -947,11 +1378,35 @@ function updateSidebarLists() {
 
       card.addEventListener('click', () => {
         selectedCell = zone;
-        optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
+        optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
         vesselProgress = 0;
         document.getElementById('route-section').style.display = 'block';
         updateRouteTelemetry();
         updateTelemetryCard(zone, true);
+        
+        // Update selected outline bounds
+        const latStep = (LAT_MAX - LAT_MIN) / 24;
+        const lngStep = (LNG_MAX - LNG_MIN) / 18;
+        const bounds = [
+          [zone.lat - latStep/2, zone.lng - lngStep/2],
+          [zone.lat + latStep/2, zone.lng + lngStep/2]
+        ];
+        selectedOutline.setBounds(bounds);
+        if (!map.hasLayer(selectedOutline)) {
+          selectedOutline.addTo(map);
+        }
+
+        // Set route coordinates
+        const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
+        routePolyline.setLatLngs(pathCoords);
+        if (!map.hasLayer(routePolyline)) {
+          routePolyline.addTo(map);
+        }
+        if (!map.hasLayer(vesselMarker)) {
+          vesselMarker.addTo(map);
+        }
+
+        updateGrid();
         showToast(`Navigating to Zone #${idx + 1}`);
       });
 
@@ -986,221 +1441,18 @@ function updateSidebarLists() {
         optimizedRoute = null;
         document.getElementById('route-section').style.display = 'none';
         updateTelemetryCard(zone, true);
+        
+        // Remove selection outlines and routes since it's a sanctuary inspection
+        if (map.hasLayer(selectedOutline)) map.removeLayer(selectedOutline);
+        if (map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+        if (map.hasLayer(vesselMarker)) map.removeLayer(vesselMarker);
+        
         showToast(`Inspecting ecosystem bounds of: ${zone.activeMPA ? zone.activeMPA.name : 'Sensitive Cell'}`);
       });
 
       container.appendChild(card);
     });
   }
-}
-
-// Master Canvas Rendering Call
-function draw() {
-  const w = canvas.width;
-  const h = canvas.height;
-  if (w === 0 || h === 0) return;
-  
-  ctx.clearRect(0, 0, w, h);
-
-  // 1. Draw Grid Cells
-  const latStep = (LAT_MAX - LAT_MIN) / 24;
-  const lngStep = (LNG_MAX - LNG_MIN) / 18;
-
-  gridData.forEach(cell => {
-    const topLeft = map.latLngToContainerPoint([cell.lat + latStep / 2, cell.lng - lngStep / 2]);
-    const bottomRight = map.latLngToContainerPoint([cell.lat - latStep / 2, cell.lng + lngStep / 2]);
-    const x = topLeft.x;
-    const y = topLeft.y;
-    const cellW = bottomRight.x - topLeft.x;
-    const cellH = bottomRight.y - topLeft.y;
-
-    if (cell.isLand) {
-      // Draw land cells in a premium soft stone color for coastline contrast and offline backup
-      ctx.fillStyle = 'rgba(238, 236, 231, 0.85)';
-      ctx.fillRect(x, y, cellW + 0.5, cellH + 0.5);
-      return;
-    }
-
-    let colorString = 'rgba(255, 255, 255, 1)';
-    
-    if (currentMode === 'fisherman') {
-      if (activeOverlays.sst && !activeOverlays.chl) {
-        const alpha = Math.max(0.1, (cell.sst - 25) / 6.0);
-        colorString = `rgba(239, 108, 0, ${alpha})`;
-      } else if (activeOverlays.chl && !activeOverlays.sst) {
-        const alpha = Math.min(1.0, Math.max(0.1, cell.chlorophyll / 5.0));
-        colorString = `rgba(46, 125, 50, ${alpha})`;
-      } else if (activeOverlays.sst && activeOverlays.chl) {
-        const alpha = Math.max(0.1, cell.fishingScore / 100);
-        colorString = `rgba(24, 99, 220, ${alpha})`;
-      } else {
-        colorString = '#f5f7f9';
-      }
-    } else {
-      if (activeOverlays.mpa && cell.conservationScore > 30) {
-        const alpha = Math.max(0.15, cell.conservationScore / 100);
-        colorString = cell.isRestrictedZone
-          ? `rgba(179, 0, 0, ${alpha})`
-          : `rgba(255, 119, 89, ${alpha})`;
-      } else {
-        colorString = '#f5f7f9';
-      }
-    }
-
-    ctx.fillStyle = colorString;
-    ctx.fillRect(x, y, cellW + 0.5, cellH + 0.5);
-
-    if (activeOverlays.currents && !cell.isLand) {
-      drawCurrentVector(cell, cellW, cellH, w, h);
-    }
-  });
-
-  // 2. Draw Latitude / Longitude grid lines and axis tags
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.04)';
-  ctx.lineWidth = 1;
-  ctx.fillStyle = 'rgba(23, 23, 28, 0.4)';
-  ctx.font = '8px var(--font-mono)';
-
-  // Draw Latitude Grid Lines
-  for (let lat = 8.5; lat < 12.8; lat += 1.0) {
-    const y = projectY(lat, h);
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-    ctx.fillText(`${lat.toFixed(1)}°N`, 8, y - 4);
-  }
-
-  // Draw Longitude Grid Lines
-  for (let lng = 75.0; lng < 77.5; lng += 1.0) {
-    const x = projectX(lng, w);
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
-    ctx.stroke();
-    ctx.fillText(`${lng.toFixed(1)}°E`, x + 4, h - 8);
-  }
-
-  // 3. Draw Dotted Conservation Zones
-  if (activeOverlays.mpa) {
-    CONSERVATION_ZONES.forEach(zone => {
-      ctx.beginPath();
-      zone.polygon.forEach((pt, idx) => {
-        const x = projectX(pt.lng, w);
-        const y = projectY(pt.lat, h);
-        if (idx === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.closePath();
-      
-      const pulseColor = zone.severityLevel === 'high' 
-        ? `rgba(179, 0, 0, ${0.6 + 0.2 * Math.sin(pulseState)})`
-        : `rgba(255, 119, 89, ${0.6 + 0.2 * Math.sin(pulseState)})`;
-
-      ctx.strokeStyle = pulseColor;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    });
-  }
-
-  // 4. Draw Coastline Path (Thick Editorial Black Line)
-  ctx.beginPath();
-  KERALA_COASTLINE.forEach((pt, idx) => {
-    const x = projectX(pt.lng, w);
-    const y = projectY(pt.lat, h);
-    if (idx === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.strokeStyle = 'var(--primary-color)';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  // Draw anchors nodes along coastline
-  KERALA_COASTLINE.forEach(pt => {
-    const x = projectX(pt.lng, w);
-    const y = projectY(pt.lat, h);
-    ctx.beginPath();
-    ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
-    ctx.fillStyle = 'var(--canvas)';
-    ctx.strokeStyle = 'var(--primary-color)';
-    ctx.lineWidth = 1.5;
-    ctx.fill();
-    ctx.stroke();
-  });
-
-  // 5. Draw Anchor Ports/Harbors
-  FISHING_HARBORS.forEach(port => {
-    const x = projectX(port.lng, w);
-    const y = projectY(port.lat, h);
-
-    // Glowing active ports pulses
-    if (port.id === selectedPort) {
-      ctx.beginPath();
-      ctx.arc(x, y, 7 + 4 * Math.sin(pulseState), 0, 2 * Math.PI);
-      ctx.fillStyle = 'rgba(24, 99, 220, 0.15)';
-      ctx.fill();
-    }
-
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, 2 * Math.PI);
-    ctx.fillStyle = port.id === selectedPort ? 'var(--action-blue)' : 'var(--deep-green)';
-    ctx.strokeStyle = 'var(--canvas)';
-    ctx.lineWidth = 1.5;
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = 'var(--cohere-black)';
-    ctx.font = 'bold 9px var(--font-mono)';
-    ctx.fillText(port.name.split(' ')[0], x + 9, y + 3);
-  });
-
-  // 6. Draw Selected Cell hover highlight
-  if (selectedCell) {
-    drawCellHighlight(selectedCell, 'var(--primary-color)', 2.5);
-  }
-
-  // 7. Draw Route and Animated Transit Vessel
-  if (currentMode === 'fisherman' && optimizedRoute) {
-    ctx.beginPath();
-    optimizedRoute.path.forEach((pt, idx) => {
-      const x = projectX(pt.lng, w);
-      const y = projectY(pt.lat, h);
-      if (idx === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.strokeStyle = 'var(--action-blue)';
-    ctx.lineWidth = 3.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-
-    // Interpolate vessel location along path
-    const vPos = getPositionAlongPath(optimizedRoute.path, vesselProgress);
-    if (vPos) {
-      const vx = projectX(vPos.lng, w);
-      const vy = projectY(vPos.lat, h);
-
-      // Pulse ring
-      ctx.beginPath();
-      ctx.arc(vx, vy, 6 + 3 * Math.sin(pulseState * 2), 0, 2 * Math.PI);
-      ctx.fillStyle = 'rgba(24, 99, 220, 0.2)';
-      ctx.fill();
-
-      // Main dot
-      ctx.beginPath();
-      ctx.arc(vx, vy, 4.5, 0, 2 * Math.PI);
-      ctx.fillStyle = 'var(--action-blue)';
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 1.5;
-      ctx.fill();
-      ctx.stroke();
-    }
-  }
-
-  // Draw Legend and Scale overlay
-  drawMapLegendAndScale();
 }
 
 // Calculate position along path at fraction p (0-1)
@@ -1220,33 +1472,6 @@ function getPositionAlongPath(path, p) {
     lat: p1.lat + (p2.lat - p1.lat) * t,
     lng: p1.lng + (p2.lng - p1.lng) * t
   };
-}
-
-// Draw current vectors
-function drawCurrentVector(cell, cellW, cellH, w, h) {
-  const x = projectX(cell.lng, w);
-  const y = projectY(cell.lat, h);
-  
-  const length = Math.max(3.5, cell.currentSpeed * 10);
-  const angleRad = (cell.currentDir * Math.PI) / 180;
-
-  const dx = Math.sin(angleRad) * length;
-  const dy = -Math.cos(angleRad) * length;
-
-  ctx.beginPath();
-  ctx.moveTo(x - dx / 2, y - dy / 2);
-  ctx.lineTo(x + dx / 2, y + dy / 2);
-  ctx.strokeStyle = 'rgba(24, 99, 220, 0.45)';
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-
-  const headlen = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(x + dx / 2, y + dy / 2);
-  ctx.lineTo(x + dx / 2 - headlen * Math.sin(angleRad - Math.PI / 6), y + dy / 2 + headlen * Math.cos(angleRad - Math.PI / 6));
-  ctx.lineTo(x + dx / 2 - headlen * Math.sin(angleRad + Math.PI / 6), y + dy / 2 + headlen * Math.cos(angleRad + Math.PI / 6));
-  ctx.fillStyle = 'rgba(24, 99, 220, 0.45)';
-  ctx.fill();
 }
 
 // Toast alerts message manager
@@ -1280,132 +1505,70 @@ function showToast(message, type = 'default') {
 // Trigger initial build setup on window load
 window.addEventListener('load', init);
 
-// Map Legend & Scale Bar Drawing helper functions
-function drawMapLegendAndScale() {
-  const w = canvas.width;
-  const h = canvas.height;
-  if (w === 0 || h === 0) return;
-  
-  // 1. Draw Distance Scale Bar
-  const scaleBarKm = 50;
-  const scaleBarWidthPx = (scaleBarKm / 327) * w;
-  const startX = 20;
-  const startY = h - 35;
-  
-  ctx.strokeStyle = 'var(--primary-color)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(startX, startY);
-  ctx.lineTo(startX + scaleBarWidthPx, startY);
-  ctx.moveTo(startX, startY - 4);
-  ctx.lineTo(startX, startY + 4);
-  ctx.moveTo(startX + scaleBarWidthPx, startY - 4);
-  ctx.lineTo(startX + scaleBarWidthPx, startY + 4);
-  ctx.stroke();
-  
-  ctx.fillStyle = 'var(--primary-color)';
-  ctx.font = 'bold 9px var(--font-mono)';
-  ctx.fillText(`${scaleBarKm} km`, startX + scaleBarWidthPx + 8, startY + 3);
-  
-  // 2. Draw Map Legend Card
-  const legendX = 20;
-  const legendY = h - 175;
-  const legendW = 180;
-  const legendH = 120;
-  
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-  ctx.strokeStyle = 'var(--hairline)';
-  ctx.lineWidth = 1;
-  drawRoundedRect(ctx, legendX, legendY, legendW, legendH, 6);
-  ctx.fill();
-  ctx.stroke();
-  
-  ctx.fillStyle = 'var(--primary-color)';
-  ctx.font = 'bold 9px var(--font-mono)';
-  ctx.fillText(currentMode === 'fisherman' ? 'YIELD ANALYSIS LEGEND' : 'CONSERVATION LEGEND', legendX + 12, legendY + 20);
-  
-  ctx.strokeStyle = 'var(--hairline)';
-  ctx.beginPath();
-  ctx.moveTo(legendX + 12, legendY + 28);
-  ctx.lineTo(legendX + legendW - 12, legendY + 28);
-  ctx.stroke();
-  
-  ctx.font = '9px var(--font-body)';
+// Floating HTML Map Legend Population functions
+function updateMapLegend() {
+  const title = document.getElementById('legend-title');
+  const itemsContainer = document.getElementById('legend-items');
+  if (!title || !itemsContainer) return;
+
+  itemsContainer.innerHTML = '';
+
   if (currentMode === 'fisherman') {
+    title.textContent = 'YIELD ANALYSIS LEGEND';
+
     if (activeOverlays.sst && !activeOverlays.chl) {
-      drawColorBox(legendX + 12, legendY + 38, 'rgba(239, 108, 0, 0.8)', 'Sea Temp (Warm/High)');
-      drawColorBox(legendX + 12, legendY + 54, 'rgba(239, 108, 0, 0.2)', 'Sea Temp (Cool/Low)');
+      addLegendItem('rgba(239, 108, 0, 0.35)', 'Sea Temp (Warm/High)');
+      addLegendItem('rgba(239, 108, 0, 0.1)', 'Sea Temp (Cool/Low)');
     } else if (activeOverlays.chl && !activeOverlays.sst) {
-      drawColorBox(legendX + 12, legendY + 38, 'rgba(46, 125, 50, 0.8)', 'Chlorophyll (High Food)');
-      drawColorBox(legendX + 12, legendY + 54, 'rgba(46, 125, 50, 0.2)', 'Chlorophyll (Low Food)');
+      addLegendItem('rgba(46, 125, 50, 0.35)', 'Chlorophyll (High Food)');
+      addLegendItem('rgba(46, 125, 50, 0.1)', 'Chlorophyll (Low Food)');
+    } else if (activeOverlays.sst && activeOverlays.chl) {
+      addLegendItem('rgba(24, 99, 220, 0.35)', 'Optimal Yield (High)');
+      addLegendItem('rgba(24, 99, 220, 0.1)', 'Optimal Yield (Low)');
     } else {
-      drawColorBox(legendX + 12, legendY + 38, 'rgba(24, 99, 220, 0.8)', 'Optimal Yield (High)');
-      drawColorBox(legendX + 12, legendY + 54, 'rgba(24, 99, 220, 0.2)', 'Optimal Yield (Low)');
+      addLegendItem('rgba(0,0,0,0)', 'No Overlay Active (Map View)');
     }
-    drawColorBox(legendX + 12, legendY + 74, 'rgba(24, 99, 220, 0.45)', 'Ocean Currents Vector', true);
-    drawColorCircle(legendX + 12, legendY + 94, 'var(--action-blue)', 'Anchor Fishing Harbors');
+
+    if (activeOverlays.currents) {
+      addLegendItem('rgba(24, 99, 220, 0.55)', 'Currents Vector Arrow', 'arrow');
+    }
+    addLegendItem('var(--action-blue)', 'Anchor Fishing Harbors', 'circle');
   } else {
-    drawColorBox(legendX + 12, legendY + 38, 'rgba(179, 0, 0, 0.7)', 'Active Spawning Ban');
-    drawColorBox(legendX + 12, legendY + 54, 'rgba(255, 119, 89, 0.7)', 'Marine Reserve Buffer');
-    drawColorBox(legendX + 12, legendY + 74, 'rgba(179, 0, 0, 0.6)', 'Seasonal Spawning Line', false, true);
-    drawColorCircle(legendX + 12, legendY + 94, 'var(--deep-green)', 'Protected Harbors');
+    title.textContent = 'CONSERVATION LEGEND';
+    addLegendItem('rgba(179, 0, 0, 0.45)', 'Active Spawning Ban');
+    addLegendItem('rgba(255, 119, 89, 0.35)', 'Marine Reserve Buffer');
+    addLegendItem('rgba(179, 0, 0, 0.6)', 'Seasonal Spawning Line', 'dotted-line');
+    addLegendItem('var(--deep-green)', 'Protected Harbors', 'circle');
   }
 }
 
-function drawRoundedRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
-}
+function addLegendItem(color, text, type = 'box') {
+  const container = document.getElementById('legend-items');
+  const item = document.createElement('div');
+  item.style.display = 'flex';
+  item.style.alignItems = 'center';
+  item.style.gap = '8px';
+  item.style.fontSize = '11px';
 
-function drawColorBox(x, y, color, text, isArrow = false, isDottedLine = false) {
-  if (isArrow) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(x, y + 4);
-    ctx.lineTo(x + 12, y + 4);
-    ctx.moveTo(x + 9, y + 2);
-    ctx.lineTo(x + 12, y + 4);
-    ctx.lineTo(x + 9, y + 6);
-    ctx.stroke();
-  } else if (isDottedLine) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([2, 2]);
-    ctx.beginPath();
-    ctx.moveTo(x, y + 4);
-    ctx.lineTo(x + 12, y + 4);
-    ctx.stroke();
-    ctx.setLineDash([]);
+  let visualHTML = '';
+  if (type === 'circle') {
+    visualHTML = `<div style="width: 8px; height: 8px; border-radius: 50%; background: ${color}; border: 1px solid white;"></div>`;
+  } else if (type === 'arrow') {
+    visualHTML = `
+      <div style="width: 12px; height: 8px; display: flex; align-items: center; justify-content: center;">
+        <svg width="12" height="6" viewBox="0 0 12 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M0 3H10M10 3L8 1M10 3L8 5" stroke="${color}" stroke-width="1.2"/>
+        </svg>
+      </div>`;
+  } else if (type === 'dotted-line') {
+    visualHTML = `<div style="width: 12px; height: 0px; border-top: 1.5px dashed ${color};"></div>`;
   } else {
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, 12, 8);
-    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
-    ctx.strokeRect(x, y, 12, 8);
+    visualHTML = `<div style="width: 12px; height: 8px; background: ${color}; border: 1px solid rgba(0,0,0,0.1); border-radius: var(--radius-xs);"></div>`;
   }
-  
-  ctx.fillStyle = 'var(--ink)';
-  ctx.fillText(text, x + 20, y + 7);
-}
 
-function drawColorCircle(x, y, color, text) {
-  ctx.beginPath();
-  ctx.arc(x + 6, y + 4, 4, 0, 2 * Math.PI);
-  ctx.fillStyle = color;
-  ctx.strokeStyle = 'white';
-  ctx.lineWidth = 1;
-  ctx.fill();
-  ctx.stroke();
-  
-  ctx.fillStyle = 'var(--ink)';
-  ctx.fillText(text, x + 20, y + 7);
+  item.innerHTML = `
+    ${visualHTML}
+    <span style="color: var(--ink);">${text}</span>
+  `;
+  container.appendChild(item);
 }

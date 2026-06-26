@@ -40,6 +40,23 @@
       </div>
     </div>
   </header>
+  
+  <!-- Demo Scenario Presets & Tour Bar (Cohere Aesthetic) -->
+  <div class="presets-bar-wrapper">
+    <div class="container presets-bar">
+      <div class="presets-left">
+        <span class="mono-label" style="font-size: 10px; color: var(--ink); font-weight: 700;">Scenario Presets</span>
+        <div class="preset-buttons">
+          <button id="preset-monsoon" class="preset-btn">Scenario: Monsoon Upwelling (July)</button>
+          <button id="preset-winter" class="preset-btn">Scenario: Spawning Peak (December)</button>
+          <button id="preset-live" class="preset-btn">Scenario: Live Satellite Sync</button>
+        </div>
+      </div>
+      <div class="presets-right">
+        <button id="btn-start-tour" class="preset-btn highlight-btn">Start Guided Tour 🧭</button>
+      </div>
+    </div>
+  </div>
 
   <!-- INCOIS Ocean State Advisory Banner -->
   <div class="alert-ticker">
@@ -93,7 +110,13 @@
         <!-- The Map Container with Leaflet map and Canvas -->
         <div class="map-container">
           <div id="map" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1;"></div>
-          <canvas id="map-canvas" style="position: absolute; top: 0; left: 0; z-index: 2; pointer-events: none;"></canvas>
+          
+          <!-- Floating Map Legend (Cohere Style) -->
+          <div id="map-legend" class="hud-panel" style="position: absolute; bottom: 20px; left: 20px; z-index: 10; display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 220px; font-family: var(--font-body); font-size: 11px; pointer-events: auto;">
+            <span class="mono-label" id="legend-title" style="color: var(--ink); font-weight: 700; font-size: 9px; letter-spacing: 1px;">Yield Analysis Legend</span>
+            <div style="height: 1px; background: var(--hairline); margin: 2px 0;"></div>
+            <div id="legend-items" style="display: flex; flex-direction: column; gap: 6px;"></div>
+          </div>
         </div>
 
         <!-- Timeline / Slider Panel -->
@@ -147,40 +170,40 @@
             
             <div class="metric-row">
               <div class="metric-box">
-                <span class="mono-label" style="font-size: 9px;">SST (°C)</span>
+                <span class="mono-label info-tooltip-trigger" style="font-size: 9px;" data-tooltip="Sea Surface Temperature. Optimal range for pelagic fish is 26.5°C to 29.5°C. Deviations disperse fish.">SST (°C) ⓘ</span>
                 <div class="metric-num" id="telemetry-sst">--</div>
               </div>
               <div class="metric-box">
-                <span class="mono-label" style="font-size: 9px;">Chlorophyll (mg/m³)</span>
+                <span class="mono-label info-tooltip-trigger" style="font-size: 9px;" data-tooltip="Proxy for food source (plankton). Optimal: 1.0 - 4.5 mg/m³. Values >4.5 signal toxic algal bloom hypoxia.">Chlorophyll ⓘ</span>
                 <div class="metric-num" id="telemetry-chl" style="color: var(--primary-color);">--</div>
               </div>
             </div>
 
             <div class="metric-row">
               <div class="metric-box">
-                <span class="mono-label" style="font-size: 9px;">Current Vector</span>
+                <span class="mono-label info-tooltip-trigger" style="font-size: 9px;" data-tooltip="Water flow velocity. Fish avoid currents >1.0 m/s, preferring mild drifts.">Current Vector ⓘ</span>
                 <div class="metric-num" id="telemetry-currents" style="font-size: 15px; color: var(--action-blue); font-weight: 600;">--</div>
               </div>
               <div class="metric-box">
-                <span class="mono-label" style="font-size: 9px;">Dist to Coast</span>
+                <span class="mono-label info-tooltip-trigger" style="font-size: 9px;" data-tooltip="Distance to coastline. Kerala continental shelf holds 90% of catch within 100km.">Dist to Coast ⓘ</span>
                 <div class="metric-num" id="telemetry-coast" style="font-size: 16px; color: var(--slate); font-weight: 600;">--</div>
               </div>
             </div>
 
             <div class="metric-row">
               <div class="metric-box">
-                <span class="mono-label" style="font-size: 9px;">Wind Forecast</span>
+                <span class="mono-label info-tooltip-trigger" style="font-size: 9px;" data-tooltip="Local wind speed/dir. High winds (>25 km/h) create rough surface states unsafe for small vessels.">Wind Forecast ⓘ</span>
                 <div class="metric-num" id="telemetry-wind" style="font-size: 13px; color: var(--form-focus); font-weight: 600;">--</div>
               </div>
               <div class="metric-box">
-                <span class="mono-label" style="font-size: 9px;">Wave State</span>
+                <span class="mono-label info-tooltip-trigger" style="font-size: 9px;" data-tooltip="Significant wave height and period. Waves >2.0m trigger harbor warning alerts.">Wave State ⓘ</span>
                 <div class="metric-num" id="telemetry-wave" style="font-size: 13px; color: var(--coral); font-weight: 600;">--</div>
               </div>
             </div>
 
             <div style="margin-top: var(--space-sm);">
               <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 2px;">
-                <span style="font-weight: 500;">Fishing Favorability</span>
+                <span style="font-weight: 500;" class="info-tooltip-trigger" data-tooltip="Combined score optimizing temperature and plankton food. Plummets by 85% in restricted spawning zones.">Fishing Favorability ⓘ</span>
                 <span id="score-favorability-label" style="font-weight: 600;">--%</span>
               </div>
               <div class="gauge-container">
@@ -190,7 +213,7 @@
 
             <div style="margin-top: var(--space-sm);">
               <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 2px;">
-                <span style="font-weight: 500;">Conservation Sensitivity</span>
+                <span style="font-weight: 500;" class="info-tooltip-trigger" data-tooltip="Ecosystem vulnerability combining active spawning bans, habitat buffers, and catch pressure.">Conservation Sensitivity ⓘ</span>
                 <span id="score-sensitivity-label" style="font-weight: 600;">--%</span>
               </div>
               <div class="gauge-container">
@@ -288,20 +311,44 @@
         <!-- Section 4: Optimized Route details -->
         <div class="sidebar-section" id="route-section" style="display:none;">
           <h3 class="mono-label" style="margin-bottom: var(--space-sm);">Vessel Route Telemetry</h3>
-          <div class="info-card" style="border-left: 3px solid var(--action-blue);">
+          <div class="info-card" style="border-left: 3px solid var(--action-blue); padding: var(--space-md);">
             <div class="info-card-header">
               <span class="info-card-title" id="route-title">Munambam to Target Grid</span>
               <span class="status-dot blue"></span>
             </div>
-            <p class="caption" style="margin: var(--space-xxs) 0 var(--space-sm) 0;">Route path recalculated dynamically to avoid active spawning bans and protected marine reserves.</p>
-            <div class="metric-row" style="margin-bottom:0;">
-              <div class="metric-box">
-                <span class="mono-label" style="font-size: 9px;">Total Distance</span>
-                <div class="metric-num" id="route-distance" style="color: var(--action-blue);">-- km</div>
+            <p class="caption" style="margin: var(--space-xxs) 0 var(--space-sm) 0;">Routing engine computes legal compliance pathways deflecting around seasonal ecological zones.</p>
+            
+            <div class="route-comparison-grid">
+              <!-- Standard Route (Non-Compliant) -->
+              <div class="route-column standard-route">
+                <span class="mono-label" style="font-size: 8px; color: var(--error); font-weight: 700;">Standard Route</span>
+                <div class="comparison-metric">
+                  <span class="caption">Dist:</span>
+                  <strong id="route-std-distance" style="color: var(--error);">-- km</strong>
+                </div>
+                <div class="comparison-metric">
+                  <span class="caption">Time:</span>
+                  <strong id="route-std-time">-- hrs</strong>
+                </div>
+                <div class="comparison-status status-error" id="route-std-status">
+                  ❌ Cuts Spawning Ban
+                </div>
               </div>
-              <div class="metric-box">
-                <span class="mono-label" style="font-size: 9px;">Est Transit Time</span>
-                <div class="metric-num" id="route-time" style="color: var(--primary-color);">-- hrs</div>
+
+              <!-- Thalassa Route (Compliant) -->
+              <div class="route-column thalassa-route">
+                <span class="mono-label" style="font-size: 8px; color: var(--action-blue); font-weight: 700;">Thalassa Route</span>
+                <div class="comparison-metric">
+                  <span class="caption">Dist:</span>
+                  <strong id="route-opt-distance" style="color: var(--action-blue);">-- km</strong>
+                </div>
+                <div class="comparison-metric">
+                  <span class="caption">Time:</span>
+                  <strong id="route-opt-time" style="color: var(--primary-color);">-- hrs</strong>
+                </div>
+                <div class="comparison-status status-success">
+                  ✅ Eco-Compliant
+                </div>
               </div>
             </div>
           </div>
@@ -314,6 +361,20 @@
 
   <!-- Toast alert warnings container -->
   <div class="toast-container" id="toast-container"></div>
+
+  <!-- Interactive Guided Tour Dialog (Cohere Style) -->
+  <div id="tour-card" class="hud-panel" style="position: absolute; bottom: 80px; left: 40px; z-index: 1000; width: 340px; display: none; flex-direction: column; gap: var(--space-sm); border-left: 3px solid var(--action-blue); pointer-events: auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span class="mono-label" id="tour-step-label" style="color: var(--action-blue); font-weight: 700; font-size: 9px; letter-spacing: 0.5px;">Guided Tour: Step 1/5</span>
+      <button id="tour-close-btn" style="border:none; background:transparent; font-family:var(--font-mono); font-size:10px; cursor:pointer; color:var(--slate);">[x]</button>
+    </div>
+    <h4 id="tour-title" style="font-size: 14px; font-weight: 700; color: var(--cohere-black); font-family: var(--font-display);">Welcome to Thalassa</h4>
+    <p id="tour-description" class="caption" style="font-size: 12px; line-height: 1.4; margin: 0;"></p>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-xxs);">
+      <button id="tour-prev-btn" class="btn-outline" style="padding: 4px 8px; font-size: 10px; font-family: var(--font-mono);">Prev</button>
+      <button id="tour-next-btn" class="btn-primary" style="padding: 4px 10px; font-size: 10px; font-family: var(--font-mono); height: auto; border-radius: var(--radius-xs);">Next</button>
+    </div>
+  </div>
 
   <!-- Main scripts -->
   <script type="module" src="/src/app.js"></script>
