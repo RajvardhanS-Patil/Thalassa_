@@ -250,38 +250,52 @@ export function calculateOptimizedRoute(portId, targetCell, grid) {
   const port = FISHING_HARBORS.find(h => h.id === portId);
   if (!port || !targetCell) return null;
 
-  // Simple A* search on grid or segment line rendering with avoidance
-  // For the MVP, we render a highly visual, realistic route path
-  // that bends around active restricted zones.
-  const path = [];
-  const steps = 12;
   const startLat = port.lat;
   const startLng = port.lng;
   const endLat = targetCell.lat;
   const endLng = targetCell.lng;
 
-  // Add starting point
-  path.push({ lat: startLat, lng: startLng });
-
-  for (let i = 1; i < steps; i++) {
-    const ratio = i / steps;
-    let intermediateLat = startLat + (endLat - startLat) * ratio;
-    let intermediateLng = startLng + (endLng - startLng) * ratio;
-
-    // Check if straight line cuts through any restricted zones
-    // If so, apply a simple deflection vector perpendicular to the line
-    for (const zone of CONSERVATION_ZONES) {
-      if (isPointInPolygon({ lat: intermediateLat, lng: intermediateLng }, zone.polygon)) {
-        // Deflect westward (seaward) out of the zone
-        intermediateLng -= 0.18; // Shift left
-      }
+  // Find the closest grid cell to the starting port
+  let startCell = null;
+  let minStartDist = Infinity;
+  for (const cell of grid) {
+    if (cell.isLand) continue;
+    const dist = getDistanceKM(startLat, startLng, cell.lat, cell.lng);
+    if (dist < minStartDist) {
+      minStartDist = dist;
+      startCell = cell;
     }
-
-    path.push({ lat: intermediateLat, lng: intermediateLng });
   }
 
-  // Add end target point
-  path.push({ lat: endLat, lng: endLng });
+  let path = null;
+  if (startCell) {
+    path = findAStarPath(startCell, targetCell, grid);
+  }
+
+  if (path && path.length > 1) {
+    // Snap exact start and end coordinates
+    path[0] = { lat: startLat, lng: startLng };
+    path[path.length - 1] = { lat: endLat, lng: endLng };
+    // Resample path to exactly 15 points for smooth vessel animation
+    path = resamplePath(path, 15);
+  } else {
+    // Fallback: simple deflection-based path
+    path = [];
+    const steps = 12;
+    path.push({ lat: startLat, lng: startLng });
+    for (let i = 1; i < steps; i++) {
+      const ratio = i / steps;
+      let intermediateLat = startLat + (endLat - startLat) * ratio;
+      let intermediateLng = startLng + (endLng - startLng) * ratio;
+      for (const zone of CONSERVATION_ZONES) {
+        if (isPointInPolygon({ lat: intermediateLat, lng: intermediateLng }, zone.polygon)) {
+          intermediateLng -= 0.18; // Deflect seaward
+        }
+      }
+      path.push({ lat: intermediateLat, lng: intermediateLng });
+    }
+    path.push({ lat: endLat, lng: endLng });
+  }
 
   // Calculate total path distance
   let totalDist = 0;
@@ -299,6 +313,140 @@ export function calculateOptimizedRoute(portId, targetCell, grid) {
 }
 
 /**
+ * Standard A* Pathfinding Algorithm on 2D grid
+ */
+function findAStarPath(startCell, targetCell, grid) {
+  // Build a 2D lookup map by [row][col]
+  const gridMap = {};
+  for (const cell of grid) {
+    if (!gridMap[cell.row]) gridMap[cell.row] = {};
+    gridMap[cell.row][cell.col] = cell;
+  }
+
+  const openSet = [startCell];
+  const closedSet = new Set();
+  const cameFrom = new Map();
+
+  const gScore = new Map();
+  const fScore = new Map();
+
+  const cellKey = (cell) => `${cell.row}_${cell.col}`;
+
+  gScore.set(cellKey(startCell), 0);
+  fScore.set(cellKey(startCell), getDistanceKM(startCell.lat, startCell.lng, targetCell.lat, targetCell.lng));
+
+  while (openSet.length > 0) {
+    // Find node with lowest fScore
+    let current = openSet[0];
+    let currentF = fScore.get(cellKey(current)) ?? Infinity;
+    let currentIdx = 0;
+
+    for (let i = 1; i < openSet.length; i++) {
+      const f = fScore.get(cellKey(openSet[i])) ?? Infinity;
+      if (f < currentF) {
+        current = openSet[i];
+        currentF = f;
+        currentIdx = i;
+      }
+    }
+
+    // Check if reached destination cell
+    if (current.row === targetCell.row && current.col === targetCell.col) {
+      const path = [];
+      let curr = current;
+      while (curr) {
+        path.push({ lat: curr.lat, lng: curr.lng });
+        curr = cameFrom.get(cellKey(curr));
+      }
+      return path.reverse();
+    }
+
+    openSet.splice(currentIdx, 1);
+    closedSet.add(cellKey(current));
+
+    // Get 8-directional neighbors
+    const neighbors = [];
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = current.row + dr;
+        const nc = current.col + dc;
+        if (gridMap[nr] && gridMap[nr][nc]) {
+          neighbors.push(gridMap[nr][nc]);
+        }
+      }
+    }
+
+    for (const neighbor of neighbors) {
+      const neighborKey = cellKey(neighbor);
+      if (closedSet.has(neighborKey)) continue;
+      if (neighbor.isLand) continue; // Walled off by land
+
+      // Traversal cost factors (highly penalize restricted / sensitive zones)
+      let costMultiplier = 1.0;
+      if (neighbor.isRestrictedZone) {
+        costMultiplier = 15.0; // Strictly avoid spawning bans
+      } else if (neighbor.conservationScore > 30) {
+        costMultiplier = 1.5 + (neighbor.conservationScore / 50.0);
+      }
+
+      // Add small penalty for diagonal movement to keep routes cleaner
+      const isDiagonal = (neighbor.row !== current.row) && (neighbor.col !== current.col);
+      const moveCost = getDistanceKM(current.lat, current.lng, neighbor.lat, neighbor.lng) * (isDiagonal ? 1.414 : 1.0);
+      
+      const tentativeG = (gScore.get(cellKey(current)) ?? Infinity) + moveCost * costMultiplier;
+
+      if (!openSet.some(n => cellKey(n) === neighborKey)) {
+        openSet.push(neighbor);
+      } else if (tentativeG >= (gScore.get(neighborKey) ?? Infinity)) {
+        continue;
+      }
+
+      cameFrom.set(neighborKey, current);
+      gScore.set(neighborKey, tentativeG);
+      fScore.set(neighborKey, tentativeG + getDistanceKM(neighbor.lat, neighbor.lng, targetCell.lat, targetCell.lng));
+    }
+  }
+
+  return null; // Path not found
+}
+
+/**
+ * Resamples a path of coordinate points to exactly N evenly spaced coordinates
+ */
+function resamplePath(points, numPoints = 15) {
+  if (!points || points.length === 0) return [];
+  if (points.length === 1) return Array(numPoints).fill(points[0]);
+
+  const distances = [0];
+  let totalLength = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const dist = getDistanceKM(points[i].lat, points[i].lng, points[i+1].lat, points[i+1].lng);
+    totalLength += dist;
+    distances.push(totalLength);
+  }
+
+  const resampled = [];
+  for (let i = 0; i < numPoints; i++) {
+    const targetDist = (i / (numPoints - 1)) * totalLength;
+    let segIdx = 0;
+    while (segIdx < distances.length - 1 && distances[segIdx + 1] < targetDist) {
+      segIdx++;
+    }
+    const d1 = distances[segIdx];
+    const d2 = distances[segIdx + 1];
+    const p1 = points[segIdx];
+    const p2 = points[segIdx + 1];
+    const t = d2 === d1 ? 0 : (targetDist - d1) / (d2 - d1);
+    resampled.push({
+      lat: p1.lat + (p2.lat - p1.lat) * t,
+      lng: p1.lng + (p2.lng - p1.lng) * t
+    });
+  }
+  return resampled;
+}
+
+/**
  * Helper to find nearest coordinate in live API datasets
  */
 function findNearestLivePoint(point, points) {
@@ -311,6 +459,5 @@ function findNearestLivePoint(point, points) {
       nearest = pt;
     }
   }
-  // Clamp match to a reasonable spatial distance (e.g. 50km)
   return minDistance < 50 ? nearest : null;
 }

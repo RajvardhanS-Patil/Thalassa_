@@ -676,17 +676,19 @@ function draw() {
   const lngStep = (LNG_MAX - LNG_MIN) / 18;
 
   gridData.forEach(cell => {
-    if (cell.isLand) {
-      // Skip drawing land cells completely to reveal the Leaflet map background
-      return;
-    }
-
     const topLeft = map.latLngToContainerPoint([cell.lat + latStep / 2, cell.lng - lngStep / 2]);
     const bottomRight = map.latLngToContainerPoint([cell.lat - latStep / 2, cell.lng + lngStep / 2]);
     const x = topLeft.x;
     const y = topLeft.y;
     const cellW = bottomRight.x - topLeft.x;
     const cellH = bottomRight.y - topLeft.y;
+
+    if (cell.isLand) {
+      // Draw land cells in a premium soft stone color for coastline contrast and offline backup
+      ctx.fillStyle = 'rgba(238, 236, 231, 0.85)';
+      ctx.fillRect(x, y, cellW + 0.5, cellH + 0.5);
+      return;
+    }
 
     let colorString = 'rgba(255, 255, 255, 1)';
     
