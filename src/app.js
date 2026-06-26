@@ -508,7 +508,7 @@ async function fetchAndCacheForecast(lat, lng, cacheKey) {
   }
 }
 
-// Draw mini historical sparkline for hovered grid coordinate
+// Draw mini historical sparkline for hovered grid coordinate (dual parameter trends)
 function drawMiniTrendChart(cell) {
   const chartCanvas = document.getElementById('mini-trend-chart');
   if (!chartCanvas) return;
@@ -521,12 +521,21 @@ function drawMiniTrendChart(cell) {
 
   // Generate 12 monthly points
   const sstValues = [];
+  const chlValues = [];
   for (let m = 0; m < 12; m++) {
     const day = Math.round((m / 12) * 365) + 15;
+    
+    // SST seasonal simulation (peaks in April-May, drops in monsoon July-August)
     const seasonalSstDiff = 2.0 * Math.sin((day - 100) * (2 * Math.PI / 365));
     const coastalCooling = 0.5 * Math.sin(cell.minDistanceToCoast / 10);
     const sst = 27.5 + seasonalSstDiff - coastalCooling;
     sstValues.push(sst);
+
+    // Chlorophyll-a simulation (spikes during monsoon upwelling in July-September)
+    const seasonalChlDiff = 2.0 * Math.max(0, Math.sin((day - 170) * (2 * Math.PI / 365)));
+    const coastalChlFactor = Math.max(0.2, 5.0 / (cell.minDistanceToCoast + 1));
+    const chlorophyll = 0.3 + seasonalChlDiff * coastalChlFactor;
+    chlValues.push(chlorophyll);
   }
 
   // Draw chart grids
@@ -537,42 +546,77 @@ function drawMiniTrendChart(cell) {
   mctx.lineTo(w, h / 2);
   mctx.stroke();
 
-  // Project points
-  const minVal = 24.0;
-  const maxVal = 32.0;
-  const points = sstValues.map((val, idx) => {
+  // 1. Plot SST Line (Min: 24C, Max: 32C)
+  const sstMin = 24.0;
+  const sstMax = 32.0;
+  const sstPoints = sstValues.map((val, idx) => {
     const x = (idx / 11) * w;
-    const y = h - ((val - minVal) / (maxVal - minVal)) * h;
+    const y = h - ((val - sstMin) / (sstMax - sstMin)) * h;
     return { x, y };
   });
 
-  // Draw curve
   mctx.beginPath();
-  mctx.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length; i++) {
-    mctx.lineTo(points[i].x, points[i].y);
+  mctx.moveTo(sstPoints[0].x, sstPoints[0].y);
+  for (let i = 1; i < sstPoints.length; i++) {
+    mctx.lineTo(sstPoints[i].x, sstPoints[i].y);
   }
   mctx.strokeStyle = 'var(--action-blue)';
   mctx.lineWidth = 1.5;
   mctx.stroke();
 
-  // Draw current active month marker
+  // 2. Plot Chlorophyll Line (Min: 0.0, Max: 5.0)
+  const chlMin = 0.0;
+  const chlMax = 5.0;
+  const chlPoints = chlValues.map((val, idx) => {
+    const x = (idx / 11) * w;
+    const y = h - ((val - chlMin) / (chlMax - chlMin)) * h;
+    return { x, y };
+  });
+
+  mctx.beginPath();
+  mctx.moveTo(chlPoints[0].x, chlPoints[0].y);
+  for (let i = 1; i < chlPoints.length; i++) {
+    mctx.lineTo(chlPoints[i].x, chlPoints[i].y);
+  }
+  mctx.strokeStyle = '#2e7d32'; // Deep Green
+  mctx.lineWidth = 1.5;
+  mctx.stroke();
+
+  // Draw current active month markers
   const currentMonthIdx = Math.max(0, Math.min(11, Math.floor((dayOfYear / 365) * 12)));
-  const activePt = points[currentMonthIdx];
-  if (activePt) {
+  
+  // SST Marker
+  const activeSstPt = sstPoints[currentMonthIdx];
+  if (activeSstPt) {
     mctx.beginPath();
-    mctx.arc(activePt.x, activePt.y, 4, 0, 2 * Math.PI);
+    mctx.arc(activeSstPt.x, activeSstPt.y, 4, 0, 2 * Math.PI);
     mctx.fillStyle = 'var(--coral)';
     mctx.strokeStyle = 'white';
     mctx.lineWidth = 1.5;
     mctx.fill();
     mctx.stroke();
-
-    // Text details
-    mctx.fillStyle = 'var(--cohere-black)';
-    mctx.font = '9px var(--font-mono)';
-    mctx.fillText(`${sstValues[currentMonthIdx].toFixed(1)}°C`, activePt.x - 12, activePt.y - 8);
   }
+
+  // Chlorophyll Marker
+  const activeChlPt = chlPoints[currentMonthIdx];
+  if (activeChlPt) {
+    mctx.beginPath();
+    mctx.arc(activeChlPt.x, activeChlPt.y, 4, 0, 2 * Math.PI);
+    mctx.fillStyle = 'var(--deep-green)';
+    mctx.strokeStyle = 'white';
+    mctx.lineWidth = 1.5;
+    mctx.fill();
+    mctx.stroke();
+  }
+
+  // Draw Text Overlays / Legends in the corners
+  mctx.fillStyle = 'var(--cohere-black)';
+  mctx.font = 'bold 9px var(--font-mono)';
+  mctx.textAlign = 'left';
+  mctx.fillText(`SST: ${sstValues[currentMonthIdx].toFixed(1)}°C`, 6, 12);
+  
+  mctx.textAlign = 'right';
+  mctx.fillText(`Chl: ${chlValues[currentMonthIdx].toFixed(2)} mg/m³`, w - 6, 12);
 }
 
 // Update route text details
