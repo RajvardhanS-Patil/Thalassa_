@@ -358,10 +358,10 @@ export function calculateMatsyaAIParams(cell, dayOfYear) {
  * Southern Latitude (phi_min) = 14.0N, Northern Latitude (phi_max) = 20.0N
  */
 export function projectTelemetryToPercent(lat, lng) {
-  const lambdaMin = 72.0;
-  const lambdaMax = 76.0;
-  const phiMin = 14.0;
-  const phiMax = 20.0;
+  const lambdaMin = LNG_MIN;
+  const lambdaMax = LNG_MAX;
+  const phiMin = LAT_MIN;
+  const phiMax = LAT_MAX;
 
   const xPercent = ((lng - lambdaMin) / (lambdaMax - lambdaMin)) * 100;
   const yPercent = 100 - (((lat - phiMin) / (phiMax - phiMin)) * 100);

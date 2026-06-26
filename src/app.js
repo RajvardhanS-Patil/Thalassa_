@@ -116,6 +116,7 @@ function translateUI(lang) {
 let liveData = null;
 let gridData = [];
 let selectedCell = null;
+let displayedTelemetryCell = null;
 let optimizedRoute = null;
 let isPlaying = false;
 let playInterval = null;
@@ -208,7 +209,7 @@ function init() {
       sensitivityReasons: ['Estuary nutrient zone'],
       favorabilityReasons: ['Optimal temperature', 'Strong food index']
     };
-    updateTelemetryCard(defaultCell);
+    updateTelemetryCard(defaultCell, true);
   }
 
   showToast("Thalassa workspace initialized. Leaflet background loaded.");
@@ -237,7 +238,7 @@ function updateGrid() {
     if (newCell) {
       selectedCell = newCell;
       optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData);
-      updateTelemetryCard(selectedCell);
+      updateTelemetryCard(selectedCell, true);
     }
   }
 
@@ -298,6 +299,32 @@ function setupEventListeners() {
   // Leaflet Map events
   map.on('mousemove', handleMapMouseMove);
   map.on('click', handleMapClick);
+  map.on('mouseout', () => {
+    lastHoveredCell = null;
+    if (selectedCell) {
+      updateTelemetryCard(selectedCell, true);
+    } else {
+      const munambamPort = FISHING_HARBORS.find(h => h.id === 'munambam');
+      if (munambamPort) {
+        const defaultCell = gridData.find(c => c.lat === munambamPort.lat && c.lng === munambamPort.lng) || {
+          lat: munambamPort.lat,
+          lng: munambamPort.lng,
+          isLand: false,
+          isDeepOcean: false,
+          sst: 28.1,
+          chlorophyll: 1.8,
+          currentSpeed: 0.5,
+          currentDir: 180,
+          fishingScore: 82,
+          conservationScore: 35,
+          minDistanceToCoast: 12,
+          sensitivityReasons: ['Estuary nutrient zone'],
+          favorabilityReasons: ['Optimal temperature', 'Strong food index']
+        };
+        updateTelemetryCard(defaultCell, true);
+      }
+    }
+  });
 
   // Hover glow coordinate updates for info-cards
   document.addEventListener('mousemove', (e) => {
@@ -426,7 +453,7 @@ function handleMapMouseMove(e) {
         const cacheKey = `${cell.lat.toFixed(1)}_${cell.lng.toFixed(1)}`;
         if (!openMeteoCache.has(cacheKey)) {
           mouseMoveDebounceTimer = setTimeout(() => {
-            fetchAndCacheForecast(cell.lat, cell.lng, cacheKey);
+            fetchAndCacheForecast(cell);
           }, 350);
         }
       }
@@ -539,7 +566,8 @@ function drawCellHighlight(cell, strokeStyle = 'var(--primary-color)', lineWidth
 }
 
 // Update telemetry details panel
-function updateTelemetryCard(cell) {
+function updateTelemetryCard(cell, forceImmediateFetch = false) {
+  displayedTelemetryCell = cell;
   document.getElementById('telemetry-coords').textContent = `${cell.lat.toFixed(3)}°N, ${cell.lng.toFixed(3)}°E`;
   document.getElementById('cell-type-badge').textContent = cell.isLand ? 'LAND' : (cell.isDeepOcean ? 'DEEP SEA' : 'SHELF');
   
@@ -567,11 +595,14 @@ function updateTelemetryCard(cell) {
   const cacheKey = `${cell.lat.toFixed(1)}_${cell.lng.toFixed(1)}`;
   if (openMeteoCache.has(cacheKey)) {
     const forecast = openMeteoCache.get(cacheKey);
-    displayForecastData(forecast);
+    displayForecastData(cell, forecast);
   } else {
     document.getElementById('telemetry-wind').textContent = 'Fetching...';
     document.getElementById('telemetry-wave').textContent = 'Fetching...';
     updateMatsyaAISec(cell);
+    if (forceImmediateFetch) {
+      fetchAndCacheForecast(cell);
+    }
   }
 
   // Update scores
@@ -585,16 +616,15 @@ function updateTelemetryCard(cell) {
   drawMiniTrendChart(cell);
 }
 
-function displayForecastData(forecast) {
+function displayForecastData(cell, forecast) {
   if (forecast && forecast.windSpeed !== null) {
     document.getElementById('telemetry-wind').textContent = `${forecast.windSpeed} ${forecast.windUnit} @ ${forecast.windDir}°`;
     document.getElementById('telemetry-wave').textContent = `${forecast.waveHeight} ${forecast.waveUnit} @ ${forecast.wavePeriod}s`;
-    if (selectedCell) {
-      updateMatsyaAISec(selectedCell, forecast);
-    }
+    updateMatsyaAISec(cell, forecast);
   } else {
     document.getElementById('telemetry-wind').textContent = '--';
     document.getElementById('telemetry-wave').textContent = '--';
+    updateMatsyaAISec(cell);
   }
 }
 
@@ -742,22 +772,23 @@ function updateMatsyaAISec(cell, liveForecast = null) {
   document.getElementById('advisory-wind').textContent = `${windSpeedVal.toFixed(0)}kts`;
 }
 
-async function fetchAndCacheForecast(lat, lng, cacheKey) {
+async function fetchAndCacheForecast(cell) {
+  const cacheKey = `${cell.lat.toFixed(1)}_${cell.lng.toFixed(1)}`;
   try {
-    const data = await fetchOpenMeteoForecast(lat, lng);
+    const data = await fetchOpenMeteoForecast(cell.lat, cell.lng);
     if (data) {
       openMeteoCache.set(cacheKey, data);
-      if (lastHoveredCell && `${lastHoveredCell.lat.toFixed(1)}_${lastHoveredCell.lng.toFixed(1)}` === cacheKey) {
-        displayForecastData(data);
+      if (displayedTelemetryCell && `${displayedTelemetryCell.lat.toFixed(1)}_${displayedTelemetryCell.lng.toFixed(1)}` === cacheKey) {
+        displayForecastData(displayedTelemetryCell, data);
       }
     } else {
-      if (lastHoveredCell && `${lastHoveredCell.lat.toFixed(1)}_${lastHoveredCell.lng.toFixed(1)}` === cacheKey) {
+      if (displayedTelemetryCell && `${displayedTelemetryCell.lat.toFixed(1)}_${displayedTelemetryCell.lng.toFixed(1)}` === cacheKey) {
         document.getElementById('telemetry-wind').textContent = 'Error';
         document.getElementById('telemetry-wave').textContent = 'Error';
       }
     }
   } catch (err) {
-    if (lastHoveredCell && `${lastHoveredCell.lat.toFixed(1)}_${lastHoveredCell.lng.toFixed(1)}` === cacheKey) {
+    if (displayedTelemetryCell && `${displayedTelemetryCell.lat.toFixed(1)}_${displayedTelemetryCell.lng.toFixed(1)}` === cacheKey) {
       document.getElementById('telemetry-wind').textContent = 'Error';
       document.getElementById('telemetry-wave').textContent = 'Error';
     }
@@ -920,7 +951,7 @@ function updateSidebarLists() {
         vesselProgress = 0;
         document.getElementById('route-section').style.display = 'block';
         updateRouteTelemetry();
-        updateTelemetryCard(zone);
+        updateTelemetryCard(zone, true);
         showToast(`Navigating to Zone #${idx + 1}`);
       });
 
@@ -954,7 +985,7 @@ function updateSidebarLists() {
         selectedCell = zone;
         optimizedRoute = null;
         document.getElementById('route-section').style.display = 'none';
-        updateTelemetryCard(zone);
+        updateTelemetryCard(zone, true);
         showToast(`Inspecting ecosystem bounds of: ${zone.activeMPA ? zone.activeMPA.name : 'Sensitive Cell'}`);
       });
 
