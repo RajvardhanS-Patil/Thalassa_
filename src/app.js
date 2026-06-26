@@ -21,6 +21,7 @@ let selectedCell = null;
 let optimizedRoute = null;
 let isPlaying = false;
 let playInterval = null;
+let map = null; // Leaflet map instance
 
 // Animation helpers
 let pulseState = 0;
@@ -44,28 +45,52 @@ const LAT_MAX = 12.8;
 const LNG_MIN = 74.5;
 const LNG_MAX = 77.5;
 
-// Coordinate projection helper functions
-function projectX(lng, width) {
-  return ((lng - LNG_MIN) / (LNG_MAX - LNG_MIN)) * width;
+// Coordinate projection helper functions utilizing Leaflet Map API
+function projectX(lng) {
+  if (!map) return 0;
+  return map.latLngToContainerPoint([10.4, lng]).x;
 }
 
-function projectY(lat, height) {
-  return ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * height;
+function projectY(lat) {
+  if (!map) return 0;
+  return map.latLngToContainerPoint([lat, 76.0]).y;
 }
 
-function unprojectX(x, width) {
-  return LNG_MIN + (x / width) * (LNG_MAX - LNG_MIN);
+function unprojectX(x) {
+  if (!map) return LNG_MIN;
+  return map.containerPointToLatLng(L.point(x, 0)).lng;
 }
 
-function unprojectY(y, height) {
-  return LAT_MAX - (y / height) * (LAT_MAX - LAT_MIN);
+function unprojectY(y) {
+  if (!map) return LAT_MAX;
+  return map.containerPointToLatLng(L.point(0, y)).lat;
 }
 
 // Initialize Application
 function init() {
+  // Initialize Leaflet Map
+  map = L.map('map', {
+    zoomControl: false,
+    attributionControl: false
+  }).setView([10.4, 76.0], 8);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 18,
+    minZoom: 6
+  }).addTo(map);
+
+  // Constrain the map bounds to the Kerala region
+  map.setMaxBounds([
+    [LAT_MIN - 1.0, LNG_MIN - 1.0],
+    [LAT_MAX + 1.0, LNG_MAX + 1.0]
+  ]);
+
   setupEventListeners();
   updateGrid();
   handleResize();
+
+  // Redraw canvas whenever Leaflet pans or zooms
+  map.on('zoom move', draw);
   
   // Set default telemetry selection (Munambam harbor)
   const munambamPort = FISHING_HARBORS.find(h => h.id === 'munambam');
@@ -88,7 +113,7 @@ function init() {
     updateTelemetryCard(defaultCell);
   }
 
-  showToast("Thalassa workspace initialized. Simulated local model loaded.");
+  showToast("Thalassa workspace initialized. Leaflet background loaded.");
   
   // Start the render loop
   requestAnimationFrame(tick);
@@ -161,9 +186,9 @@ function setupEventListeners() {
   // Live API Fetch trigger
   document.getElementById('btn-fetch-live').addEventListener('click', triggerLiveApiFetch);
 
-  // Canvas Mouse events
-  canvas.addEventListener('mousemove', handleCanvasMouseMove);
-  canvas.addEventListener('click', handleCanvasClick);
+  // Leaflet Map events
+  map.on('mousemove', handleMapMouseMove);
+  map.on('click', handleMapClick);
 
   window.addEventListener('resize', handleResize);
 }
@@ -235,6 +260,9 @@ function setupLayerToggle(elementId, key) {
 
 // Handle Canvas Resize
 function handleResize() {
+  if (map) {
+    map.invalidateSize();
+  }
   const parent = canvas.parentElement;
   canvas.width = parent.clientWidth;
   canvas.height = parent.clientHeight;
@@ -252,14 +280,17 @@ function getCellFromCoords(x, y) {
   });
 }
 
-// Canvas Hover interaction
+// Map Hover interaction
 let lastHoveredCell = null;
-function handleCanvasMouseMove(e) {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+function handleMapMouseMove(e) {
+  const lat = e.latlng.lat;
+  const lng = e.latlng.lng;
   
-  const cell = getCellFromCoords(x, y);
+  const cell = gridData.find(cell => {
+    const latStep = (LAT_MAX - LAT_MIN) / 24;
+    const lngStep = (LNG_MAX - LNG_MIN) / 18;
+    return Math.abs(cell.lat - lat) <= (latStep / 2) && Math.abs(cell.lng - lng) <= (lngStep / 2);
+  });
   
   if (cell !== lastHoveredCell) {
     lastHoveredCell = cell;
@@ -282,13 +313,17 @@ function handleCanvasMouseMove(e) {
   }
 }
 
-// Canvas Selection interaction
-function handleCanvasClick(e) {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+// Map Selection interaction
+function handleMapClick(e) {
+  const lat = e.latlng.lat;
+  const lng = e.latlng.lng;
   
-  const cell = getCellFromCoords(x, y);
+  const cell = gridData.find(cell => {
+    const latStep = (LAT_MAX - LAT_MIN) / 24;
+    const lngStep = (LNG_MAX - LNG_MIN) / 18;
+    return Math.abs(cell.lat - lat) <= (latStep / 2) && Math.abs(cell.lng - lng) <= (lngStep / 2);
+  });
+
   if (cell) {
     if (cell.isLand) return; // Skip land clicks
     
@@ -309,17 +344,28 @@ async function triggerLiveApiFetch() {
   const btn = document.getElementById('btn-fetch-live');
   btn.disabled = true;
   btn.textContent = "Querying APIs...";
-  showToast("Accessing INCOIS ERDDAP servers. Requesting daily chlorophyll/SST indices...");
+  showToast("Accessing INCOIS ERDDAP servers. Requesting latest chlorophyll and SST indices...");
 
   try {
-    const sstApiData = await fetchIncoisErddapData('sst');
+    const [sstApiData, chlApiData] = await Promise.all([
+      fetchIncoisErddapData('sst').catch(() => null),
+      fetchIncoisErddapData('chl').catch(() => null)
+    ]);
     
-    if (sstApiData) {
-      liveData = { sst: sstApiData };
-      showToast("Live ERDDAP SST dataset ingested successfully.", 'green');
-      
-      activeOverlays.sst = true;
-      document.getElementById('layer-sst').classList.add('active');
+    if (sstApiData || chlApiData) {
+      liveData = {};
+      if (sstApiData) {
+        liveData.sst = sstApiData;
+        showToast("Live ERDDAP SST dataset ingested successfully.", 'green');
+        activeOverlays.sst = true;
+        document.getElementById('layer-sst').classList.add('active');
+      }
+      if (chlApiData) {
+        liveData.chlorophyll = chlApiData;
+        showToast("Live ERDDAP Chlorophyll dataset ingested successfully.", 'green');
+        activeOverlays.chl = true;
+        document.getElementById('layer-chl').classList.add('active');
+      }
     } else {
       showToast("Live servers uncontactable or blocked by CORS. Running local simulation.", 'orange');
     }
@@ -374,19 +420,15 @@ function switchPerspective(mode) {
 
 // Draw cell selection highlight box
 function drawCellHighlight(cell, strokeStyle = 'var(--primary-color)', lineWidth = 3) {
-  const w = canvas.width;
-  const h = canvas.height;
   const latStep = (LAT_MAX - LAT_MIN) / 24;
   const lngStep = (LNG_MAX - LNG_MIN) / 18;
 
-  const x = projectX(cell.lng - lngStep / 2, w);
-  const y = projectY(cell.lat + latStep / 2, h);
-  const cellW = (lngStep / (LNG_MAX - LNG_MIN)) * w;
-  const cellH = (latStep / (LAT_MAX - LAT_MIN)) * h;
+  const topLeft = map.latLngToContainerPoint([cell.lat + latStep / 2, cell.lng - lngStep / 2]);
+  const bottomRight = map.latLngToContainerPoint([cell.lat - latStep / 2, cell.lng + lngStep / 2]);
 
   ctx.strokeStyle = strokeStyle;
   ctx.lineWidth = lineWidth;
-  ctx.strokeRect(x, y, cellW, cellH);
+  ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
 }
 
 // Update telemetry details panel
@@ -632,15 +674,19 @@ function draw() {
   // 1. Draw Grid Cells
   const latStep = (LAT_MAX - LAT_MIN) / 24;
   const lngStep = (LNG_MAX - LNG_MIN) / 18;
-  const cellW = (lngStep / (LNG_MAX - LNG_MIN)) * w;
-  const cellH = (latStep / (LAT_MAX - LAT_MIN)) * h;
 
   gridData.forEach(cell => {
     if (cell.isLand) {
-      ctx.fillStyle = '#eae7df'; // Warm stone
-      ctx.fillRect(projectX(cell.lng - lngStep / 2, w), projectY(cell.lat + latStep / 2, h), cellW + 0.5, cellH + 0.5);
+      // Skip drawing land cells completely to reveal the Leaflet map background
       return;
     }
+
+    const topLeft = map.latLngToContainerPoint([cell.lat + latStep / 2, cell.lng - lngStep / 2]);
+    const bottomRight = map.latLngToContainerPoint([cell.lat - latStep / 2, cell.lng + lngStep / 2]);
+    const x = topLeft.x;
+    const y = topLeft.y;
+    const cellW = bottomRight.x - topLeft.x;
+    const cellH = bottomRight.y - topLeft.y;
 
     let colorString = 'rgba(255, 255, 255, 1)';
     
@@ -669,7 +715,7 @@ function draw() {
     }
 
     ctx.fillStyle = colorString;
-    ctx.fillRect(projectX(cell.lng - lngStep / 2, w), projectY(cell.lat + latStep / 2, h), cellW + 0.5, cellH + 0.5);
+    ctx.fillRect(x, y, cellW + 0.5, cellH + 0.5);
 
     if (activeOverlays.currents && !cell.isLand) {
       drawCurrentVector(cell, cellW, cellH, w, h);

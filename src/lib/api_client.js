@@ -18,23 +18,43 @@ const LNG_MAX = 77.5;
  * Dataset: Satellite-derived Daily SST or Chlorophyll
  */
 export async function fetchIncoisErddapData(parameter = 'sst', date = null) {
-  const targetDate = date || new Date().toISOString().split('T')[0] + 'T00:00:00Z';
-  
-  // INCOIS ERDDAP dataset IDs (standard open-access grids)
+  // Use correct dataset IDs on the INCOIS ERDDAP server:
+  // - SST: NOAA_AVHRR_datasets
+  // - Chlorophyll: incois_oceansat2_datasets
   const datasetId = parameter === 'sst' 
-    ? 'AMSRE_SST_Daily_Global' // Example SST dataset
-    : 'MODISA_Chlorophyll_Daily_Global'; // Example Chlorophyll dataset
+    ? 'NOAA_AVHRR_datasets' 
+    : 'incois_oceansat2_datasets';
 
-  // Construct standard ERDDAP gridded query URL (JSON response)
-  const queryUrl = `https://erddap.incois.gov.in/erddap/griddap/${datasetId}.json?${parameter}[(${targetDate})][(${LAT_MIN}):(${LAT_MAX})][(${LNG_MIN}):(${LNG_MAX})]`;
+  const timeQuery = date ? `(${date})` : `(last)`;
   
-  console.log(`[Thalassa API Client] Querying INCOIS ERDDAP: ${queryUrl}`);
-  
+  // Construct the coordinate subset dimensions query string
+  // Note: NOAA_AVHRR_datasets has depth (0.0) as the second dimension.
+  const dimensions = datasetId === 'NOAA_AVHRR_datasets'
+    ? `[${timeQuery}][(0.0)][(${LAT_MIN}):(${LAT_MAX})][(${LNG_MIN}):(${LNG_MAX})]`
+    : `[${timeQuery}][(${LAT_MIN}):(${LAT_MAX})][(${LNG_MIN}):(${LNG_MAX})]`;
+
+  // Map parameter name to the real column in the dataset
+  const realParam = parameter === 'sst' ? 'SST' : 'CHL';
+
+  // URL encode the brackets to prevent strict Tomcat 400 Bad Request exceptions
+  const queryStr = `${realParam}${dimensions}`
+    .replace(/\[/g, '%5B')
+    .replace(/\]/g, '%5D')
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29')
+    .replace(/:/g, '%3A');
+
+  // Try the relative proxy URL first (Vite dev proxy)
+  const relativeUrl = `/erddap/griddap/${datasetId}.json?${queryStr}`;
+  // Fallback to absolute URL if proxy is not configured (will likely hit CORS in browser, but good for raw fetch/node)
+  const absoluteUrl = `https://erddap.incois.gov.in/erddap/griddap/${datasetId}.json?${queryStr}`;
+
+  console.log(`[Thalassa API Client] Querying INCOIS ERDDAP (Proxy): ${relativeUrl}`);
+
   try {
-    const response = await fetch(queryUrl, { 
+    const response = await fetch(relativeUrl, { 
       method: 'GET',
-      headers: { 'Accept': 'application/json' },
-      mode: 'cors'
+      headers: { 'Accept': 'application/json' }
     });
     
     if (!response.ok) {
@@ -44,8 +64,23 @@ export async function fetchIncoisErddapData(parameter = 'sst', date = null) {
     const json = await response.json();
     return parseErddapResponse(json, parameter);
   } catch (error) {
-    console.warn(`[Thalassa API Client] Live INCOIS ERDDAP request failed. Falling back to local model. Reason: ${error.message}`);
-    return null; // Signals data_engine to use simulated fallback
+    console.warn(`[Thalassa API Client] Proxy request failed, trying absolute URL direct fallback...`);
+    try {
+      const response = await fetch(absoluteUrl, { 
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      
+      const json = await response.json();
+      return parseErddapResponse(json, parameter);
+    } catch (fallbackError) {
+      console.warn(`[Thalassa API Client] Live INCOIS ERDDAP request failed. Falling back to local model. Reason: ${fallbackError.message}`);
+      return null; // Signals data_engine to use simulated fallback
+    }
   }
 }
 
@@ -97,15 +132,31 @@ export async function fetchCopernicusMarineData(parameter = 'currents', token = 
  */
 function parseErddapResponse(json, parameter) {
   try {
+    const colNames = json.table.columnNames;
+    
+    // Find the 0-based indices dynamically based on columnNames
+    const latIdx = colNames.findIndex(name => name.toLowerCase() === 'latitude' || name.toLowerCase() === 'lat');
+    const lngIdx = colNames.findIndex(name => name.toLowerCase() === 'longitude' || name.toLowerCase() === 'lon' || name.toLowerCase() === 'lng');
+    const valIdx = colNames.findIndex(name => name.toLowerCase() === parameter.toLowerCase() || name === 'SST' || name === 'CHL' || name === 'sst' || name === 'chl');
+
+    if (latIdx === -1 || lngIdx === -1 || valIdx === -1) {
+      throw new Error(`Could not find required columns in ERDDAP response. Found: ${colNames.join(', ')}`);
+    }
+
     const rows = json.table.rows;
-    const gridPoints = rows.map(row => {
-      // ERDDAP typical row output: [time, latitude, longitude, parameter_value]
-      return {
-        lat: parseFloat(row[1]),
-        lng: parseFloat(row[2]),
-        value: parseFloat(row[3])
-      };
-    });
+    const gridPoints = [];
+
+    for (const row of rows) {
+      const val = parseFloat(row[valIdx]);
+      // Skip null/NaN/0 placeholder values (e.g. land grid cells)
+      if (row[valIdx] !== null && !isNaN(val)) {
+        gridPoints.push({
+          lat: parseFloat(row[latIdx]),
+          lng: parseFloat(row[lngIdx]),
+          value: val
+        });
+      }
+    }
     
     return {
       source: 'INCOIS ERDDAP',
