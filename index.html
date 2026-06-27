@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Matsya Drishti - Ocean AI & Fisheries Advisory Portal</title>
+  <title>Thalassa - Matsya Drishti Ocean AI & Fisheries Advisory Portal</title>
+  <meta name="description" content="Thalassa (Matsya Drishti) is a high-fidelity digital twin and ocean AI advisory portal mapping the Kerala coastline to balance sustainable fishing yields with marine reserve spawning bans.">
   <link rel="stylesheet" href="/index.css">
   <!-- Leaflet CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
@@ -19,9 +20,11 @@
   <!-- Header Navigation -->
   <header>
     <div class="container nav-bar">
-      <a href="#" class="nav-logo">
-        MATSYA DRISHTI <span class="nav-sub-tag">OCEAN AI</span>
-      </a>
+      <h1 class="nav-logo-wrapper">
+        <a href="#" class="nav-logo">
+          MATSYA DRISHTI <span class="nav-sub-tag">OCEAN AI</span>
+        </a>
+      </h1>
       
       <!-- Primary Toggle between Modes -->
       <div class="view-switch">
@@ -87,7 +90,8 @@
                 <button id="layer-sst" class="layer-badge active">SST</button>
                 <button id="layer-chl" class="layer-badge active">Chlorophyll</button>
                 <button id="layer-currents" class="layer-badge">Currents</button>
-                <button id="layer-mpa" class="layer-badge active">Conservation Zones</button>
+                <button id="layer-mpa" class="layer-badge active">MPA Zones</button>
+                <button id="layer-prediction" class="layer-badge">AI Forecast</button>
               </div>
             </div>
           </div>
@@ -96,12 +100,12 @@
           <div class="hud-group">
             <div class="hud-panel">
               <span class="mono-label" style="color: var(--ink);">Anchor Port</span>
-              <select id="port-selector" style="font-family: var(--font-body); font-size: 12px; padding: 4px 8px; border: 1px solid var(--hairline); border-radius: var(--radius-xs); background: white; outline: none; cursor: pointer;">
-                <option value="vizhinjam">Vizhinjam (Thiruvananthapuram)</option>
-                <option value="neendakara">Neendakara (Kollam)</option>
-                <option value="munambam" selected>Munambam (Ernakulam)</option>
-                <option value="beypore">Beypore (Kozhikode)</option>
-                <option value="azheekkal">Azheekkal (Kannur)</option>
+              <select id="port-selector" style="font-family: var(--font-body); font-size: 12px; padding: 4px 8px; border: 1px solid var(--hairline); border-radius: var(--radius-xs); background: var(--soft-stone); color: var(--ink); outline: none; cursor: pointer;">
+                <option value="vizhinjam" style="background: var(--soft-stone); color: var(--ink);">Vizhinjam (Thiruvananthapuram)</option>
+                <option value="neendakara" style="background: var(--soft-stone); color: var(--ink);">Neendakara (Kollam)</option>
+                <option value="munambam" style="background: var(--soft-stone); color: var(--ink);" selected>Munambam (Ernakulam)</option>
+                <option value="beypore" style="background: var(--soft-stone); color: var(--ink);">Beypore (Kozhikode)</option>
+                <option value="azheekkal" style="background: var(--soft-stone); color: var(--ink);">Azheekkal (Kannur)</option>
               </select>
             </div>
           </div>
@@ -149,7 +153,7 @@
         <div class="sidebar-section">
           <div class="sidebar-title">
             <h3 class="mono-label" style="color: var(--slate); font-weight: 700;">Active Perspective</h3>
-            <span id="perspective-badge" style="background: var(--pale-green); color: var(--deep-green); padding: 4px 8px; border-radius: var(--radius-xs); font-size: 11px; font-weight: 600;">FISHERMAN VIEW</span>
+            <span id="perspective-badge" style="background: rgba(0, 163, 255, 0.15); color: var(--color-status-info); padding: 4px 8px; border-radius: var(--radius-xs); font-size: 11px; font-weight: 600;">FISHERMAN VIEW</span>
           </div>
           
           <h2 id="main-perspective-heading" class="card-heading" style="margin-bottom: var(--space-xs);">Optimized Fishing & Catch Advisories</h2>
@@ -351,6 +355,78 @@
                 </div>
               </div>
             </div>
+
+            <!-- Live Transit Simulator & Eco-Impact Console -->
+            <div class="transit-simulator-console">
+              <span class="mono-label" style="font-size: 9px; color: var(--ink); font-weight: 700; display: block; margin-bottom: 8px; margin-top: 12px; border-top: 1px dashed var(--hairline); padding-top: 12px;">Live Route Transit Simulation</span>
+              
+              <!-- Simulation Controls -->
+              <div class="simulator-controls">
+                <button id="sim-play-pause-btn" class="sim-btn active">Pause Sim</button>
+                <button id="sim-speed-1x" class="sim-btn active">1x</button>
+                <button id="sim-speed-2x" class="sim-btn">2x</button>
+                <button id="sim-speed-5x" class="sim-btn">5x</button>
+                <button id="sim-speed-10x" class="sim-btn">10x</button>
+              </div>
+
+              <!-- Transit Progress Bar -->
+              <div class="sim-progress-wrapper">
+                <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
+                  <span style="color: var(--muted); font-family: var(--font-mono);">TRANSIT PROGRESS</span>
+                  <span id="sim-progress-pct" style="font-weight: 700; font-family: var(--font-mono);">0%</span>
+                </div>
+                <div class="sim-progress-bar-container">
+                  <div class="sim-progress-bar" id="sim-progress-bar"></div>
+                </div>
+              </div>
+
+              <!-- Real-time SVG Dial Gauge HUD -->
+              <div class="sim-gauge-container" style="display: flex; justify-content: center; gap: 24px; margin: 16px 0; padding: 12px; background: rgba(24, 61, 61, 0.2); border: 1px solid var(--color-border-glow); border-radius: var(--radius-sm);">
+                <!-- Gauge 1: Fuel Efficiency -->
+                <div class="sim-gauge-box" style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                  <svg width="60" height="60" viewBox="0 0 64 64">
+                    <circle cx="32" cy="32" r="26" fill="none" stroke="var(--color-border-glow)" stroke-width="4"/>
+                    <circle id="gauge-fuel-ring" cx="32" cy="32" r="26" fill="none" stroke="var(--color-primary)" stroke-width="4" stroke-dasharray="163.3" stroke-dashoffset="163.3" stroke-linecap="round" transform="rotate(-90 32 32)" style="transition: stroke-dashoffset 0.3s ease;"/>
+                    <text x="32" y="36" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--ink)" font-weight="bold" id="gauge-fuel-text">--</text>
+                  </svg>
+                  <span class="mono-label" style="font-size: 8px; letter-spacing: 0.5px; color: var(--muted);">EFFICIENCY</span>
+                </div>
+                <!-- Gauge 2: Carbon Offset -->
+                <div class="sim-gauge-box" style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                  <svg width="60" height="60" viewBox="0 0 64 64">
+                    <circle cx="32" cy="32" r="26" fill="none" stroke="var(--color-border-glow)" stroke-width="4"/>
+                    <circle id="gauge-co2-ring" cx="32" cy="32" r="26" fill="none" stroke="var(--color-status-info)" stroke-width="4" stroke-dasharray="163.3" stroke-dashoffset="163.3" stroke-linecap="round" transform="rotate(-90 32 32)" style="transition: stroke-dashoffset 0.3s ease;"/>
+                    <text x="32" y="36" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--ink)" font-weight="bold" id="gauge-co2-text">--</text>
+                  </svg>
+                  <span class="mono-label" style="font-size: 8px; letter-spacing: 0.5px; color: var(--muted);">CARBON GAIN</span>
+                </div>
+              </div>
+
+              <!-- Simulator Metrics -->
+              <div class="simulator-metrics-grid">
+                <div class="sim-metric-box">
+                  <div class="sim-metric-label">Vessel Position</div>
+                  <div class="sim-metric-val" id="sim-pos-val" style="font-size: 11px;">--</div>
+                </div>
+                <div class="sim-metric-box">
+                  <div class="sim-metric-label">Current Drag</div>
+                  <div class="sim-metric-val" id="sim-drag-val">--</div>
+                </div>
+                <div class="sim-metric-box" style="border-left: 2px solid var(--coral);">
+                  <div class="sim-metric-label">Fuel Burned (Est)</div>
+                  <div class="sim-metric-val" id="sim-fuel-val">--</div>
+                </div>
+                <div class="sim-metric-box" style="border-left: 2px solid var(--color-primary); background-color: rgba(166, 207, 190, 0.08);">
+                  <div class="sim-metric-label">CO₂ Saved (vs Straight)</div>
+                  <div class="sim-metric-val" id="sim-co2-val" style="color: var(--color-primary);">--</div>
+                </div>
+              </div>
+
+              <!-- Live Safety Warning Alert Banner -->
+              <div class="sim-alert-banner" id="sim-safety-banner">
+                <span>🟢 Safe Sailing: All route segments below warning thresholds.</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -368,7 +444,7 @@
       <span class="mono-label" id="tour-step-label" style="color: var(--action-blue); font-weight: 700; font-size: 9px; letter-spacing: 0.5px;">Guided Tour: Step 1/5</span>
       <button id="tour-close-btn" style="border:none; background:transparent; font-family:var(--font-mono); font-size:10px; cursor:pointer; color:var(--slate);">[x]</button>
     </div>
-    <h4 id="tour-title" style="font-size: 14px; font-weight: 700; color: var(--cohere-black); font-family: var(--font-display);">Welcome to Thalassa</h4>
+    <h4 id="tour-title" style="font-size: 14px; font-weight: 700; color: var(--color-primary); font-family: var(--font-display);">Welcome to Thalassa</h4>
     <p id="tour-description" class="caption" style="font-size: 12px; line-height: 1.4; margin: 0;"></p>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-xxs);">
       <button id="tour-prev-btn" class="btn-outline" style="padding: 4px 8px; font-size: 10px; font-family: var(--font-mono);">Prev</button>

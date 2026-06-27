@@ -7,42 +7,43 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono&family=Inter:wght@400;500;600&display=swap');
 
 :root {
-  /* Premium Light/Editorial Theme variables */
-  --color-surface: #ffffff; /* Soft clean white background canvas */
-  --color-surface-container: #f8f6f0; /* Coastal sand container background */
-  --color-primary: #004d40; /* Forest Green / Safe Zone alert highlights */
-  --color-secondary: #5c6f68; /* Soft slate/muted green borders & secondary text */
-  --color-status-info: #0284c7; /* Sky Marine Blue */
-  --color-status-critical: #dc2626; /* Bleaching stress / violation alerts */
-  --color-surface-glass: rgba(255, 255, 255, 0.75); /* Translucent white glass containers */
-  --color-border-glow: rgba(92, 111, 104, 0.2); /* Interactive subtle glow borders */
+  /* MatsyaDrishti (OceanSync AI) Theme variables */
+  --color-surface: #0a151a; /* Deep ocean midnight background canvas */
+  --color-surface-container: #172126; /* Intermediate panel background */
+  --color-primary: #a6cfbe; /* Sage green highlight/success indicators */
+  --color-secondary: #afcdc2; /* Muted sage borders and text elements */
+  --color-status-info: #00a3ff; /* Live streams & radar sweep overlays */
+  --color-status-critical: #ff5a5a; /* Vibrant red for bleaching stress and illegal vessel violations */
+  --color-surface-glass: rgba(24, 61, 61, 0.6); /* Blended semi-transparent containers */
+  --color-border-glow: rgba(147, 177, 166, 0.2); /* Interactive subtle glow borders */
 
-  /* Map old variables to the new ones for compatibility and light theme */
-  --cohere-black: #001d3d; /* Deep Ocean Navy */
-  --primary-color: #003566; /* INCOIS Marine Blue */
-  --ink: #1e293b; /* Dark slate ink */
-  --deep-green: #004d40; /* Forest Green */
-  --dark-navy: #000814;
+  /* Old variables mapping to MatsyaDrishti colors */
+  --cohere-black: #050d10; /* Extra deep midnight */
+  --primary-color: #a6cfbe; /* Sage green */
+  --ink: #afcdc2; /* Muted sage/silver text */
+  --deep-green: #172126; /* Panel background */
+  --dark-navy: #0a151a;
   --canvas: var(--color-surface);
   --soft-stone: var(--color-surface-container);
-  --pale-green: rgba(0, 77, 64, 0.08);
-  --pale-blue: rgba(2, 132, 199, 0.08);
-  --hairline: rgba(0, 0, 0, 0.08);
-  --border-light: rgba(0, 0, 0, 0.08);
-  --card-border: rgba(0, 0, 0, 0.04);
-  --muted: #64748b;
-  --slate: #475569;
-  --body-muted: #334155;
-  --action-blue: var(--color-status-info);
-  --focus-blue: #0c4a6e;
-  --coral: var(--color-status-critical);
-  --coral-soft: #fecaca;
-  --on-primary: #ffffff;
-  --error: var(--color-status-critical);
+  --pale-green: rgba(166, 207, 190, 0.12);
+  --pale-blue: rgba(0, 163, 255, 0.12);
+  --hairline: rgba(147, 177, 166, 0.25);
+  --border-light: rgba(147, 177, 166, 0.2);
+  --card-border: rgba(147, 177, 166, 0.15);
+  --muted: #839b92; /* Sage muted */
+  --slate: #afcdc2; /* Sage slate */
+  --body-muted: #afcdc2;
+  --action-blue: #00a3ff;
+  --focus-blue: #00a3ff;
+  --coral: #ff5a5a;
+  --coral-soft: rgba(255, 90, 90, 0.15);
+  --on-primary: #0a151a; /* Dark text on sage primary */
+  --error: #ff5a5a;
+  --form-focus: #00a3ff;
 
   /* Typography */
-  --font-display: 'Space Grotesk', 'Inter', sans-serif;
-  --font-body: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', 'ui-sans-serif', 'system-ui', sans-serif;
+  --font-body: 'Inter', 'Arial', 'ui-sans-serif', 'system-ui', sans-serif;
   --font-mono: 'Space Mono', monospace;
 
   /* Radius */
@@ -63,7 +64,7 @@
   --space-xxl: 48px;
   --space-section: 80px;
 
-  --shadow-subtle: 0 4px 30px rgba(0, 0, 0, 0.25);
+  --shadow-subtle: 0 4px 30px rgba(0, 0, 0, 0.3); /* dark soft shadow */
   --shadow-focus: 0 0 0 3px rgba(0, 163, 255, 0.4);
 }
 
@@ -87,7 +88,8 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
   font-weight: 400;
-  color: var(--cohere-black);
+  color: var(--ink);
+  letter-spacing: -0.03em;
 }
 
 .hero-display {
@@ -235,7 +237,7 @@ header {
 .map-hud-top {
   position: absolute;
   top: var(--space-md);
-  left: var(--space-md);
+  left: 56px; /* Shift to show Leaflet zoom control buttons on top-left */
   right: var(--space-md);
   display: flex;
   justify-content: space-between;
@@ -255,11 +257,11 @@ header {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--color-border-glow);
   border-radius: var(--radius-sm);
-  padding: var(--space-xs) var(--space-sm);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.25);
+  padding: 6px 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: 8px;
 }
 
 /* Switch & Controls */
@@ -340,7 +342,7 @@ header {
   border: 1px solid var(--color-border-glow);
   border-radius: var(--radius-sm);
   padding: var(--space-md);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
 }
 
@@ -353,13 +355,13 @@ header {
   height: 100%;
   background: radial-gradient(
     150px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    rgba(166, 207, 190, 0.12),
+    rgba(166, 207, 190, 0.15),
     transparent 80%
   );
   z-index: 1;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.2s ease;
 }
 
 .info-card:hover::before {
@@ -368,8 +370,8 @@ header {
 
 .info-card:hover {
   border-color: var(--color-primary);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(0, 163, 255, 0.15);
+  transform: none;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .info-card > * {
@@ -434,7 +436,7 @@ header {
   font-family: var(--font-mono);
   font-size: 20px;
   font-weight: 700;
-  color: var(--deep-green);
+  color: var(--color-primary);
   margin-top: 4px;
 }
 
@@ -536,19 +538,25 @@ header {
   justify-content: center;
   background-color: var(--primary-color);
   color: var(--on-primary);
-  border: none;
+  border: 1px solid var(--primary-color);
   border-radius: var(--radius-pill);
-  padding: 10px 20px;
+  padding: 10px 22px;
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   text-decoration: none;
 }
 
 .btn-primary:hover {
-  background-color: var(--cohere-black);
+  background-color: transparent;
+  color: var(--primary-color);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
 }
 
 .btn-outline {
@@ -559,18 +567,24 @@ header {
   color: var(--primary-color);
   border: 1px solid var(--primary-color);
   border-radius: var(--radius-pill);
-  padding: 8px 16px;
+  padding: 8px 18px;
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   text-decoration: none;
 }
 
 .btn-outline:hover {
   background-color: var(--primary-color);
   color: var(--on-primary);
+  border-color: var(--primary-color);
+  transform: translateY(-1px);
+}
+
+.btn-outline:active {
+  transform: translateY(0);
 }
 
 /* Layer Control Badges */
@@ -584,9 +598,9 @@ header {
   background: transparent;
   border: 1px solid var(--hairline);
   color: var(--slate);
-  padding: 6px 12px;
+  padding: 4px 8px;
   border-radius: var(--radius-xl);
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -595,6 +609,20 @@ header {
   border-color: var(--primary-color);
   color: var(--primary-color);
   background: var(--soft-stone);
+}
+
+/* currents flow SVG animation rules */
+@keyframes currents-flow-animation {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.flowing-current {
+  stroke-dasharray: 8, 16;
+  animation: currents-flow-animation 1.5s linear infinite;
 }
 
 /* Toast Alerts */
@@ -641,6 +669,14 @@ header {
 .status-dot.blue { background-color: #1565c0; }
 
 /* --- Matsya Drishti Custom styles --- */
+.nav-logo-wrapper {
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  display: inline-flex;
+}
 .nav-logo {
   font-family: var(--font-display) !important;
   font-weight: 700;
@@ -648,6 +684,7 @@ header {
   display: flex;
   align-items: center;
   gap: 6px;
+  text-decoration: none;
 }
 .nav-sub-tag {
   font-family: var(--font-mono);
@@ -681,12 +718,12 @@ header {
   transition: all 0.15s ease;
 }
 .lang-btn:hover {
-  color: var(--cohere-black);
+  color: var(--color-primary);
 }
 .lang-btn.active {
-  background: var(--canvas);
-  color: var(--primary-color);
-  box-shadow: var(--shadow-subtle);
+  background: var(--color-primary);
+  color: var(--color-surface);
+  box-shadow: none;
 }
 
 /* Alert Ticker */
@@ -816,8 +853,8 @@ header {
 .preset-btn {
   background: var(--canvas);
   border: 1px solid var(--hairline);
-  padding: 4px 10px;
-  border-radius: var(--radius-xs);
+  padding: 6px 14px;
+  border-radius: var(--radius-xl);
   font-family: var(--font-body);
   font-size: 11px;
   font-weight: 500;
@@ -844,6 +881,7 @@ header {
   color: var(--action-blue);
   font-family: var(--font-mono);
   font-weight: 700;
+  border-radius: var(--radius-xl);
 }
 
 .preset-btn.highlight-btn:hover {
@@ -855,7 +893,7 @@ header {
 .info-tooltip-trigger {
   position: relative;
   cursor: help;
-  text-decoration: underline dotted rgba(0,0,0,0.3);
+  text-decoration: underline dotted rgba(255, 255, 255, 0.45);
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -945,13 +983,13 @@ header {
 }
 
 .comparison-status.status-error {
-  background-color: #ffebee;
-  color: var(--error);
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f87171;
 }
 
 .comparison-status.status-success {
-  background-color: var(--pale-green);
-  color: var(--deep-green);
+  background-color: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
 }
 
 /* --- Tour Highlighting --- */
@@ -960,4 +998,207 @@ header {
   z-index: 999 !important;
   position: relative !important;
   pointer-events: auto !important;
+}
+
+/* --- Live Transit Simulator & Eco-Impact Console --- */
+.transit-simulator-console {
+  margin-top: var(--space-md);
+  border-top: 1px dashed var(--hairline);
+  padding-top: var(--space-sm);
+}
+
+.simulator-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.sim-btn {
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  padding: 4px 10px;
+  border-radius: var(--radius-xl);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--ink);
+  transition: all 0.2s ease;
+}
+
+.sim-btn:hover {
+  background: var(--soft-stone);
+  border-color: var(--slate);
+}
+
+.sim-btn.active {
+  background: var(--action-blue);
+  color: white;
+  border-color: var(--action-blue);
+  font-weight: bold;
+}
+
+.sim-progress-wrapper {
+  margin-bottom: var(--space-sm);
+}
+
+.sim-progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background-color: var(--soft-stone);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.sim-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--action-blue);
+  transition: width 0.1s linear;
+}
+
+.simulator-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.sim-metric-box {
+  background: var(--soft-stone);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.sim-metric-label {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+.sim-metric-val {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--ink);
+  margin-top: 2px;
+}
+
+.sim-alert-banner {
+  background-color: rgba(2, 132, 199, 0.05);
+  border: 1px solid rgba(2, 132, 199, 0.2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs);
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-body);
+  transition: all 0.3s ease;
+}
+
+.sim-alert-banner.warning {
+  background-color: rgba(220, 38, 38, 0.05);
+  border-color: rgba(220, 38, 38, 0.2);
+  color: var(--coral);
+}
+
+/* --- Matsya AI Inference Core Dark Console styling --- */
+#matsya-card {
+  background-color: var(--color-surface-glass) !important;
+  color: var(--ink) !important;
+  border: 1px solid var(--color-border-glow) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+#matsya-card .info-card-title {
+  color: var(--color-primary) !important;
+}
+
+#matsya-card .mono-label {
+  color: var(--color-secondary) !important;
+}
+
+#matsya-card .caption {
+  color: var(--color-secondary) !important;
+}
+
+#matsya-card div[style*="background-color: var(--color-border-glow)"] {
+  background-color: var(--color-border-glow) !important;
+}
+
+#matsya-card .risk-breakdown-grid > div {
+  background-color: rgba(24, 61, 61, 0.4) !important;
+  border-color: var(--color-border-glow) !important;
+}
+
+#matsya-card .risk-breakdown-grid > div div {
+  color: var(--color-secondary) !important;
+}
+
+#matsya-card .risk-breakdown-grid > div #breakdown-e,
+#matsya-card .risk-breakdown-grid > div #breakdown-b,
+#matsya-card .risk-breakdown-grid > div #breakdown-o,
+#matsya-card .risk-breakdown-grid > div #breakdown-a,
+#matsya-card .risk-breakdown-grid > div #breakdown-v {
+  color: var(--color-primary) !important;
+}
+
+#matsya-card div[style*="background: rgba(0, 163, 255, 0.05)"] {
+  background: rgba(0, 163, 255, 0.08) !important;
+  border-color: rgba(0, 163, 255, 0.25) !important;
+}
+
+#matsya-card div[style*="background: rgba(0, 163, 255, 0.05)"] span {
+  color: var(--color-secondary) !important;
+}
+
+#matsya-card div[style*="background: rgba(0, 163, 255, 0.05)"] #advisory-reason {
+  color: var(--color-primary) !important;
+}
+
+#matsya-card div[style*="background: rgba(0, 163, 255, 0.05)"] #advisory-wave,
+#matsya-card div[style*="background: rgba(0, 163, 255, 0.05)"] #advisory-wind {
+  color: var(--color-status-info) !important;
+}
+
+/* --- UI Component Tweaks --- */
+.switch-btn.active {
+  box-shadow: none !important;
+}
+
+.lang-btn.active {
+  box-shadow: none !important;
+}
+
+.alert-ticker {
+  background-color: var(--soft-stone) !important;
+}
+
+/* Brand overrides for dark canvas */
+.nav-logo {
+  color: var(--color-primary) !important;
+}
+
+.nav-logo::before {
+  background-color: var(--color-primary) !important;
+}
+
+/* Custom Scrollbar for sidebar-panel */
+.sidebar-panel::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-panel::-webkit-scrollbar-thumb {
+  background: var(--color-border-glow);
+  border-radius: 3px;
+}
+.sidebar-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--color-secondary);
 }
