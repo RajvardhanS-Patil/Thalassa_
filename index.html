@@ -351,6 +351,56 @@
                 </div>
               </div>
             </div>
+
+            <!-- Live Transit Simulator & Eco-Impact Console -->
+            <div class="transit-simulator-console">
+              <span class="mono-label" style="font-size: 9px; color: var(--ink); font-weight: 700; display: block; margin-bottom: 8px; margin-top: 12px; border-top: 1px dashed var(--hairline); padding-top: 12px;">Live Route Transit Simulation</span>
+              
+              <!-- Simulation Controls -->
+              <div class="simulator-controls">
+                <button id="sim-play-pause-btn" class="sim-btn active">Pause Sim</button>
+                <button id="sim-speed-1x" class="sim-btn active">1x</button>
+                <button id="sim-speed-2x" class="sim-btn">2x</button>
+                <button id="sim-speed-5x" class="sim-btn">5x</button>
+                <button id="sim-speed-10x" class="sim-btn">10x</button>
+              </div>
+
+              <!-- Transit Progress Bar -->
+              <div class="sim-progress-wrapper">
+                <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
+                  <span style="color: var(--muted); font-family: var(--font-mono);">TRANSIT PROGRESS</span>
+                  <span id="sim-progress-pct" style="font-weight: 700; font-family: var(--font-mono);">0%</span>
+                </div>
+                <div class="sim-progress-bar-container">
+                  <div class="sim-progress-bar" id="sim-progress-bar"></div>
+                </div>
+              </div>
+
+              <!-- Simulator Metrics -->
+              <div class="simulator-metrics-grid">
+                <div class="sim-metric-box">
+                  <div class="sim-metric-label">Vessel Position</div>
+                  <div class="sim-metric-val" id="sim-pos-val" style="font-size: 11px;">--</div>
+                </div>
+                <div class="sim-metric-box">
+                  <div class="sim-metric-label">Current Drag</div>
+                  <div class="sim-metric-val" id="sim-drag-val">--</div>
+                </div>
+                <div class="sim-metric-box" style="border-left: 2px solid var(--coral);">
+                  <div class="sim-metric-label">Fuel Burned (Est)</div>
+                  <div class="sim-metric-val" id="sim-fuel-val">--</div>
+                </div>
+                <div class="sim-metric-box" style="border-left: 2px solid var(--deep-green); background-color: var(--pale-green);">
+                  <div class="sim-metric-label">CO₂ Saved (vs Straight)</div>
+                  <div class="sim-metric-val" id="sim-co2-val" style="color: var(--deep-green);">--</div>
+                </div>
+              </div>
+
+              <!-- Live Safety Warning Alert Banner -->
+              <div class="sim-alert-banner" id="sim-safety-banner">
+                <span>🟢 Safe Sailing: All route segments below warning thresholds.</span>
+              </div>
+            </div>
           </div>
         </div>
 

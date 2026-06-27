@@ -28,6 +28,9 @@ let map = null; // Leaflet map instance
 // Animation helpers
 let pulseState = 0;
 let vesselProgress = 0;
+let isSimulatingVessel = true;
+let vesselSpeedMultiplier = 1.0;
+let simFuelBurned = 0;
 
 // Active Overlay Layers
 const activeOverlays = {
@@ -241,12 +244,100 @@ function tick() {
   pulseState = (pulseState + 0.05) % (2 * Math.PI);
   
   if (optimizedRoute && vesselMarker && map.hasLayer(vesselMarker)) {
-    vesselProgress = (vesselProgress + 0.002) % 1.0;
+    if (isSimulatingVessel) {
+      const step = 0.001 * vesselSpeedMultiplier;
+      vesselProgress += step;
+      if (vesselProgress >= 1.0) {
+        vesselProgress = 0;
+        simFuelBurned = 0;
+      }
+    }
     
     // Animate vessel coordinates along route path
     const vPos = getPositionAlongPath(optimizedRoute.path, vesselProgress);
     if (vPos) {
       vesselMarker.setLatLng([vPos.lat, vPos.lng]);
+      
+      // Calculate dynamic simulation metrics
+      const totalSegments = optimizedRoute.path.length - 1;
+      const rawIdx = vesselProgress * totalSegments;
+      const idx = Math.min(totalSegments - 1, Math.floor(rawIdx));
+      
+      let headingDeg = 0;
+      if (optimizedRoute.path.length > 1) {
+        const p1 = optimizedRoute.path[idx];
+        const p2 = optimizedRoute.path[idx + 1];
+        const angleRad = Math.atan2(p2.lat - p1.lat, p2.lng - p1.lng);
+        headingDeg = (angleRad * 180 / Math.PI + 360) % 360;
+      }
+      
+      // Look up current cell
+      const latStep = (LAT_MAX - LAT_MIN) / 24;
+      const lngStep = (LNG_MAX - LNG_MIN) / 18;
+      const cell = gridData.find(c => Math.abs(c.lat - vPos.lat) <= (latStep / 2) && Math.abs(c.lng - vPos.lng) <= (lngStep / 2)) || {
+        currentSpeed: 0.2,
+        currentDir: 90,
+        waveHeight: 0.8,
+        windSpeed: 10,
+        isRestrictedZone: false
+      };
+      
+      // Drag calculation (current heading vs flow direction)
+      const diffAngle = Math.abs((headingDeg - cell.currentDir + 180) % 360 - 180);
+      const cosDiff = Math.cos(diffAngle * Math.PI / 180);
+      const dragPercent = cosDiff * cell.currentSpeed * 15; // range: -15% to +15%
+      
+      // Fuel burn rate
+      let fuelRate = 12.0 * (1 + dragPercent / 100);
+      if (!cell.isLand) {
+        fuelRate += Math.max(0, (cell.waveHeight || 0.8) - 1.0) * 5.0;
+        fuelRate += Math.max(0, (cell.windSpeed || 10.0) - 15.0) * 0.2;
+      }
+      
+      // Accumulate fuel (represented hours: step * duration)
+      if (isSimulatingVessel) {
+        const dh = (0.001 * vesselSpeedMultiplier) * (optimizedRoute.duration || 5);
+        simFuelBurned += fuelRate * dh;
+      }
+      
+      // Standard route comparison fuel
+      const stdDuration = (optimizedRoute.distance / 12); // Standard slower vessel speed in knots
+      const stdTotalFuel = 15.5 * stdDuration;
+      const stdFuelCurrent = stdTotalFuel * vesselProgress;
+      const co2Saved = 2.62 * (stdFuelCurrent - simFuelBurned);
+      
+      // Update DOM
+      const progressPct = Math.round(vesselProgress * 100);
+      const pctEl = document.getElementById('sim-progress-pct');
+      const barEl = document.getElementById('sim-progress-bar');
+      const posEl = document.getElementById('sim-pos-val');
+      const dragEl = document.getElementById('sim-drag-val');
+      const fuelEl = document.getElementById('sim-fuel-val');
+      const co2El = document.getElementById('sim-co2-val');
+      const safetyEl = document.getElementById('sim-safety-banner');
+      
+      if (pctEl) pctEl.textContent = `${progressPct}%`;
+      if (barEl) barEl.style.width = `${progressPct}%`;
+      if (posEl) posEl.textContent = `${vPos.lat.toFixed(3)}°N, ${vPos.lng.toFixed(3)}°E`;
+      if (dragEl) {
+        dragEl.textContent = `${dragPercent > 0 ? '+' : ''}${dragPercent.toFixed(1)}%`;
+        dragEl.style.color = dragPercent > 0 ? 'var(--coral)' : 'var(--deep-green)';
+      }
+      if (fuelEl) fuelEl.textContent = `${simFuelBurned.toFixed(1)} L`;
+      if (co2El) co2El.textContent = `${Math.max(0, co2Saved).toFixed(1)} kg`;
+      
+      if (safetyEl) {
+        if (cell.waveHeight > 2.0 || cell.windSpeed > 25) {
+          safetyEl.className = 'sim-alert-banner warning';
+          safetyEl.innerHTML = `<span>⚠️ Alert: Rough seas (Waves: ${cell.waveHeight.toFixed(1)}m, Wind: ${cell.windSpeed.toFixed(0)}kts)</span>`;
+        } else if (cell.isRestrictedZone) {
+          safetyEl.className = 'sim-alert-banner warning';
+          safetyEl.innerHTML = `<span>⚠️ Warning: Entering Protected Spawning Area!</span>`;
+        } else {
+          safetyEl.className = 'sim-alert-banner';
+          safetyEl.innerHTML = `<span>🟢 Safe Sailing: All route segments below warning thresholds.</span>`;
+        }
+      }
     }
   }
   
@@ -603,6 +694,36 @@ function setupEventListeners() {
       map.invalidateSize();
     }
   });
+
+  // Live Transit Simulator controls setup
+  const simPlayPauseBtn = document.getElementById('sim-play-pause-btn');
+  if (simPlayPauseBtn) {
+    simPlayPauseBtn.addEventListener('click', () => {
+      isSimulatingVessel = !isSimulatingVessel;
+      simPlayPauseBtn.textContent = isSimulatingVessel ? 'Pause Sim' : 'Start Sim';
+      if (isSimulatingVessel) {
+        simPlayPauseBtn.classList.add('active');
+      } else {
+        simPlayPauseBtn.classList.remove('active');
+      }
+    });
+  }
+
+  const speedBtns = ['1x', '2x', '5x', '10x'];
+  speedBtns.forEach(speed => {
+    const btn = document.getElementById(`sim-speed-${speed}`);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        vesselSpeedMultiplier = parseFloat(speed);
+        speedBtns.forEach(s => {
+          const b = document.getElementById(`sim-speed-${s}`);
+          if (b) b.classList.remove('active');
+        });
+        btn.classList.add('active');
+        showToast(`Simulation speed set to ${speed}`);
+      });
+    }
+  });
 }
 
 // Apply Scenario Preset configurations
@@ -895,6 +1016,7 @@ function handleMapClick(e) {
     selectedCell = cell;
     optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
     vesselProgress = 0; // Reset transit animation
+    simFuelBurned = 0;
     
     document.getElementById('route-section').style.display = 'block';
     updateRouteTelemetry();
@@ -1382,6 +1504,7 @@ function updateSidebarLists() {
         selectedCell = zone;
         optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
         vesselProgress = 0;
+        simFuelBurned = 0;
         document.getElementById('route-section').style.display = 'block';
         updateRouteTelemetry();
         updateTelemetryCard(zone, true);

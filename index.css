@@ -961,3 +961,109 @@ header {
   position: relative !important;
   pointer-events: auto !important;
 }
+
+/* --- Live Transit Simulator & Eco-Impact Console --- */
+.transit-simulator-console {
+  margin-top: var(--space-md);
+  border-top: 1px dashed var(--hairline);
+  padding-top: var(--space-sm);
+}
+
+.simulator-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.sim-btn {
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--ink);
+  transition: all 0.2s ease;
+}
+
+.sim-btn:hover {
+  background: var(--soft-stone);
+  border-color: var(--slate);
+}
+
+.sim-btn.active {
+  background: var(--action-blue);
+  color: white;
+  border-color: var(--action-blue);
+  font-weight: bold;
+}
+
+.sim-progress-wrapper {
+  margin-bottom: var(--space-sm);
+}
+
+.sim-progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background-color: var(--soft-stone);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.sim-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--action-blue), var(--color-primary));
+  transition: width 0.1s linear;
+}
+
+.simulator-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.sim-metric-box {
+  background: var(--soft-stone);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.sim-metric-label {
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+.sim-metric-val {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--ink);
+  margin-top: 2px;
+}
+
+.sim-alert-banner {
+  background-color: rgba(2, 132, 199, 0.05);
+  border: 1px solid rgba(2, 132, 199, 0.2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs);
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-body);
+  transition: all 0.3s ease;
+}
+
+.sim-alert-banner.warning {
+  background-color: rgba(220, 38, 38, 0.05);
+  border-color: rgba(220, 38, 38, 0.2);
+  color: var(--coral);
+}
