@@ -237,7 +237,7 @@ header {
 .map-hud-top {
   position: absolute;
   top: var(--space-md);
-  left: var(--space-md);
+  left: 56px; /* Shift to show Leaflet zoom control buttons on top-left */
   right: var(--space-md);
   display: flex;
   justify-content: space-between;
@@ -257,11 +257,11 @@ header {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--color-border-glow);
   border-radius: var(--radius-sm);
-  padding: var(--space-xs) var(--space-sm);
+  padding: 6px 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: 8px;
 }
 
 /* Switch & Controls */
@@ -598,9 +598,9 @@ header {
   background: transparent;
   border: 1px solid var(--hairline);
   color: var(--slate);
-  padding: 6px 12px;
+  padding: 4px 8px;
   border-radius: var(--radius-xl);
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -609,6 +609,20 @@ header {
   border-color: var(--primary-color);
   color: var(--primary-color);
   background: var(--soft-stone);
+}
+
+/* currents flow SVG animation rules */
+@keyframes currents-flow-animation {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.flowing-current {
+  stroke-dasharray: 8, 16;
+  animation: currents-flow-animation 1.5s linear infinite;
 }
 
 /* Toast Alerts */

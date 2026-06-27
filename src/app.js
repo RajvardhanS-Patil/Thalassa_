@@ -41,10 +41,7 @@ const activeOverlays = {
   prediction: false
 };
 
-// Animated currents state helpers
-let currentPolylines = [];
-let currentsAnimationId = null;
-let currentOffset = 0;
+
 
 // Bounding box limits matching data_engine.js
 const LAT_MIN = 8.0;
@@ -249,16 +246,7 @@ function init() {
 function tick() {
   pulseState = (pulseState + 0.05) % (2 * Math.PI);
 
-  // Animate currents vectors flowing along flow direction
-  if (activeOverlays.currents && currentPolylines.length > 0) {
-    currentOffset -= 0.6;
-    currentPolylines.forEach(line => {
-      if (line._path) {
-        line.setStyle({ dashOffset: `${currentOffset}` });
-      }
-    });
-  }
-  
+
   if (optimizedRoute && vesselMarker && map.hasLayer(vesselMarker)) {
     if (isSimulatingVessel) {
       const step = 0.001 * vesselSpeedMultiplier;
@@ -611,7 +599,6 @@ function updateMapLayers() {
 
   // 4. Update Currents Vectors
   currentsLayerGroup.clearLayers();
-  currentPolylines = [];
   if (activeOverlays.currents) {
     gridData.forEach(cell => {
       if (cell.isLand) return;
@@ -629,11 +616,10 @@ function updateMapLayers() {
       const line = L.polyline([start, end], {
         color: 'rgba(0, 163, 255, 0.65)',
         weight: 1.5,
-        dashArray: '6, 12',
+        className: 'flowing-current',
         interactive: false
       });
       line.addTo(currentsLayerGroup);
-      currentPolylines.push(line);
       
       // Draw arrowhead by adding short lines (static arrow)
       const headlen = scale * 0.25;
