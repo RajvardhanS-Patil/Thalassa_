@@ -429,6 +429,8 @@ function updateMapLayers() {
       });
       
       poly.bindTooltip(`<strong>${zone.name}</strong><br>${zone.description}`, { sticky: true });
+      poly.on('mousemove', handleMapMouseMove);
+      poly.on('click', handleMapClick);
       poly.addTo(conservationLayerGroup);
     });
   }
