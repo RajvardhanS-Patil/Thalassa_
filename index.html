@@ -56,6 +56,7 @@
         </div>
       </div>
       <div class="presets-right">
+        <button id="btn-trigger-sos" class="preset-btn" style="background: rgba(220, 38, 38, 0.1); border-color: rgba(220, 38, 38, 0.3); color: #ef4444;">⚡ Trigger SOS Demo</button>
         <button id="btn-start-tour" class="preset-btn highlight-btn">Start Guided Tour 🧭</button>
       </div>
     </div>
@@ -127,15 +128,20 @@
         <div class="timeline-panel">
           <div class="timeline-controls">
             <button id="btn-play-pause" class="play-btn">
-              <!-- Play Icon SVG -->
               <svg id="play-icon" width="12" height="12" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
                 <path d="M8 5V19L19 12L8 5Z"/>
               </svg>
-              <!-- Pause Icon SVG -->
               <svg id="pause-icon" style="display:none;" width="12" height="12" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
                 <path d="M6 19H10V5H6V19ZM14 5V19H18V5H14Z"/>
               </svg>
             </button>
+            <!-- Forecast Horizon Toggle -->
+            <div class="forecast-controls">
+              <button class="forecast-btn active" data-hours="0">Now</button>
+              <button class="forecast-btn" data-hours="24">+24h</button>
+              <button class="forecast-btn" data-hours="48">+48h</button>
+              <button class="forecast-btn" data-hours="72">+72h</button>
+            </div>
           </div>
           <div class="timeline-slider-wrapper">
             <span class="mono-label" id="timeline-date-label">June 24 (Day 175)</span>
@@ -241,6 +247,11 @@
               <canvas id="mini-trend-chart" style="width: 100%; height: 50px; display: block; background: rgba(0,0,0,0.2); border: 1px solid var(--border-light); border-radius: var(--radius-xs);"></canvas>
             </div>
           </div>
+          <!-- Log Catch Button -->
+          <button id="btn-log-catch" class="btn-log-catch" style="margin-top: 12px; width: 100%;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>
+            Log Catch & Generate ESG Certificate
+          </button>
         </div>
 
         <!-- Section 3: Matsya AI Inference Core -->
@@ -521,6 +532,60 @@
       <button id="tour-next-btn" class="btn-primary" style="padding: 4px 10px; font-size: 10px; font-family: var(--font-mono); height: auto; border-radius: var(--radius-xs);">Next</button>
     </div>
   </div>
+
+  <!-- SOS Emergency Overlay -->
+  <div id="sos-overlay" class="sos-overlay" style="display: none;">
+    <div class="sos-content">
+      <div class="sos-icon">🚨</div>
+      <h2 class="sos-title">EMERGENCY ALERT</h2>
+      <p class="sos-subtitle" id="sos-reason">Severe anomaly detected in the ocean grid</p>
+      <div class="sos-coords" id="sos-coords">Coordinates: --</div>
+      <div class="sos-ai-response" id="sos-ai-response">Matsya AI is analyzing the threat...</div>
+      <button id="sos-dismiss-btn" class="sos-dismiss">Acknowledge & Dismiss</button>
+    </div>
+  </div>
+
+  <!-- ESG Sustainability Certificate Modal -->
+  <div id="certificate-modal" class="certificate-modal" style="display: none;">
+    <div class="certificate-card">
+      <button id="cert-close-btn" class="cert-close">&times;</button>
+      <div class="cert-header">
+        <div class="cert-logo">🐟</div>
+        <h2>Sustainability Certificate</h2>
+        <p class="cert-subtitle">Thalassa Marine ESG Verification</p>
+      </div>
+      <div class="cert-body">
+        <div class="cert-score-ring">
+          <svg viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(166,207,190,0.15)" stroke-width="8"/>
+            <circle id="cert-score-ring" cx="60" cy="60" r="52" fill="none" stroke="var(--color-primary)" stroke-width="8" stroke-dasharray="326.7" stroke-dashoffset="326.7" stroke-linecap="round" transform="rotate(-90 60 60)"/>
+          </svg>
+          <span class="cert-score-text" id="cert-score-text">--</span>
+          <span class="cert-score-label">ESG SCORE</span>
+        </div>
+        <div class="cert-details">
+          <div class="cert-row"><span>Certificate ID</span><span id="cert-id" class="cert-val">--</span></div>
+          <div class="cert-row"><span>Coordinates</span><span id="cert-coords" class="cert-val">--</span></div>
+          <div class="cert-row"><span>Port</span><span id="cert-port" class="cert-val">--</span></div>
+          <div class="cert-row"><span>SST Reading</span><span id="cert-sst" class="cert-val">--</span></div>
+          <div class="cert-row"><span>Eco Risk</span><span id="cert-ecorisk" class="cert-val">--</span></div>
+          <div class="cert-row"><span>Fishing Score</span><span id="cert-fishing" class="cert-val">--</span></div>
+          <div class="cert-row"><span>Timestamp</span><span id="cert-timestamp" class="cert-val">--</span></div>
+        </div>
+        <div class="cert-hash" id="cert-hash">HASH: --</div>
+      </div>
+      <button id="cert-download-btn" class="cert-download">Download Certificate</button>
+    </div>
+  </div>
+
+  <!-- Deploy Drones Quick Action Button -->
+  <button id="btn-deploy-drones" class="drone-fab" title="Deploy Inspection Drones">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/>
+      <path d="M3 7l3 3M21 7l-3 3M3 17l3-3M21 17l-3-3"/>
+      <path d="M9 4l-1-1M15 4l1-1M9 20l-1 1M15 20l1 1"/>
+    </svg>
+  </button>
 
   <!-- Main scripts -->
   <script type="module" src="/src/app.js"></script>

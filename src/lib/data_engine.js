@@ -58,13 +58,19 @@ export function getDistanceKM(lat1, lon1, lat2, lon2) {
  * Generates the unified spatial grid for a specific date (day of year)
  * Optionally incorporates live API data if available.
  */
-export function generateDigitalTwinGrid(dayOfYear, liveData = null) {
+export function generateDigitalTwinGrid(dayOfYear, liveData = null, forecastHours = 0) {
   const grid = [];
   const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
   const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
   
   // Current month (approximate based on day of year 1-365)
   const currentMonth = Math.floor((dayOfYear / 365) * 12) + 1;
+
+  // Forecast drift parameters
+  const forecastDays = forecastHours / 24;
+  const sstDrift = forecastDays * 0.3; // °C per day warming/cooling trend
+  const chlLatDrift = forecastDays * 0.08; // degrees south-east bloom drift
+  const chlLngDrift = forecastDays * 0.05;
 
   for (let r = 0; r < GRID_ROWS; r++) {
     const lat = LAT_MAX - (r * latStep) - (latStep / 2);
@@ -105,6 +111,10 @@ export function generateDigitalTwinGrid(dayOfYear, liveData = null) {
         // Add spatial gradient (warmer near coast, cooler offshore)
         const coastalCooling = 0.5 * Math.sin(minDistanceToCoast / 10);
         sst = 27.5 + seasonalSstDiff - coastalCooling + (Math.sin(lat * 5) * 0.3);
+        // Apply forecast drift
+        if (forecastHours > 0) {
+          sst += sstDrift * Math.sin((lat - 10) * 2);
+        }
       }
 
       if (liveData && liveData.chlorophyll && liveData.chlorophyll.points) {
@@ -116,6 +126,13 @@ export function generateDigitalTwinGrid(dayOfYear, liveData = null) {
         // Much higher concentration closer to the coast (nutrient runoff)
         const coastalChlFactor = Math.max(0.2, 5.0 / (minDistanceToCoast + 1));
         chlorophyll = 0.3 + seasonalChlDiff * coastalChlFactor + (Math.cos(lng * 8) * 0.1);
+        // Apply forecast chlorophyll bloom drift (migrates south-east with currents)
+        if (forecastHours > 0) {
+          const driftedLat = lat - chlLatDrift;
+          const driftedLng = lng + chlLngDrift;
+          chlorophyll *= (1 + 0.15 * Math.sin(driftedLat * 6) * forecastDays);
+          chlorophyll = Math.max(0.1, chlorophyll);
+        }
       }
 
       // Current vectors (simulating typical monsoon currents flowing south, and winter flowing north)

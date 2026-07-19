@@ -24,6 +24,8 @@ let optimizedRoute = null;
 let isPlaying = false;
 let playInterval = null;
 let map = null; // Leaflet map instance
+let forecastHorizon = 0; // 0, 24, 48, 72 hours ahead
+let droneLayerGroup = null; // For drone swarm markers
 
 // Animation helpers
 let pulseState = 0;
@@ -134,6 +136,7 @@ function init() {
   portsLayerGroup = L.layerGroup().addTo(map);
   currentsLayerGroup = L.layerGroup().addTo(map);
   gridLinesLayerGroup = L.layerGroup().addTo(map);
+  droneLayerGroup = L.layerGroup().addTo(map);
 
   // Set up hover highlight layer
   hoverOutline = L.rectangle([[0, 0], [0, 0]], {
@@ -440,7 +443,7 @@ function initGridLines() {
 
 // Regenerate grid matrices based on state
 function updateGrid() {
-  gridData = generateDigitalTwinGrid(dayOfYear, liveData);
+  gridData = generateDigitalTwinGrid(dayOfYear, liveData, forecastHorizon);
   
   // Link gridData cell items to their respective layer shapes
   gridData.forEach(cell => {
@@ -2051,7 +2054,315 @@ function initGeminiAssistant() {
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initGeminiAssistant);
+  document.addEventListener('DOMContentLoaded', () => { initGeminiAssistant(); initHackathonFeatures(); });
 } else {
   initGeminiAssistant();
+  initHackathonFeatures();
+}
+
+// ==========================================
+// HACKATHON FEATURES INIT
+// ==========================================
+function initHackathonFeatures() {
+  initForecastControls();
+  initSOSSystem();
+  initDroneSwarm();
+  initESGCertificate();
+}
+
+// ==========================================
+// Feature 1: Predictive SOS & Emergency Response
+// ==========================================
+function initSOSSystem() {
+  const triggerBtn = document.getElementById('btn-trigger-sos');
+  const overlay = document.getElementById('sos-overlay');
+  const dismissBtn = document.getElementById('sos-dismiss-btn');
+
+  if (!triggerBtn || !overlay) return;
+
+  triggerBtn.addEventListener('click', () => {
+    triggerSOS();
+  });
+
+  dismissBtn.addEventListener('click', () => {
+    overlay.style.display = 'none';
+  });
+}
+
+async function triggerSOS() {
+  const overlay = document.getElementById('sos-overlay');
+  const reasonEl = document.getElementById('sos-reason');
+  const coordsEl = document.getElementById('sos-coords');
+  const aiResponseEl = document.getElementById('sos-ai-response');
+
+  // Find the most dangerous cell in the grid
+  let worstCell = null;
+  let worstScore = 0;
+  gridData.forEach(cell => {
+    if (cell.isLand) return;
+    const danger = (cell.ecoRisk || 0) + (cell.currentSpeed || 0) * 0.5;
+    if (danger > worstScore) {
+      worstScore = danger;
+      worstCell = cell;
+    }
+  });
+
+  if (!worstCell) {
+    worstCell = { lat: 9.97, lng: 76.27, ecoRisk: 0.9, currentSpeed: 1.2 };
+  }
+
+  // Play warning siren
+  try { playSonarPing(300, 1.0, 'sawtooth'); } catch(e) {}
+  setTimeout(() => { try { playSonarPing(200, 0.8, 'square'); } catch(e) {} }, 500);
+
+  // Show overlay
+  reasonEl.textContent = `Severe anomaly detected: High eco-risk (${(worstCell.ecoRisk || 0.85).toFixed(2)}) with strong currents (${(worstCell.currentSpeed || 0.8).toFixed(1)} m/s)`;
+  coordsEl.textContent = `Coordinates: ${worstCell.lat.toFixed(3)}°N, ${worstCell.lng.toFixed(3)}°E`;
+  aiResponseEl.textContent = 'Matsya AI is analyzing the threat...';
+  overlay.style.display = 'flex';
+
+  // Pan to danger zone
+  if (map) {
+    map.setView([worstCell.lat, worstCell.lng], 10, { animate: true, duration: 1.5 });
+  }
+
+  // Ask AI for emergency response
+  try {
+    const response = await fetch('/api/gemini-advisory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `EMERGENCY: A severe ocean anomaly has been detected at ${worstCell.lat.toFixed(3)}°N, ${worstCell.lng.toFixed(3)}°E. Eco-risk is ${(worstCell.ecoRisk || 0.85).toFixed(2)} and current speed is ${(worstCell.currentSpeed || 0.8).toFixed(1)} m/s. Issue an emergency evacuation advisory for nearby vessels. Recommend the nearest safe harbor and evacuation route.`,
+        context: { emergency: true, cell: worstCell }
+      })
+    });
+    const data = await response.json();
+    let text = data.text || 'Unable to contact Matsya AI. Follow standard emergency protocols.';
+    text = text.replace(/\[PAN:\s*-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?\]/gi, '').trim();
+    aiResponseEl.textContent = text;
+  } catch (err) {
+    aiResponseEl.textContent = 'COMMS ERROR: Unable to reach Matsya AI. Follow standard emergency protocols: Head to nearest harbor immediately.';
+  }
+}
+
+// ==========================================
+// Feature 2: Time-Travel Forecast Controls
+// ==========================================
+function initForecastControls() {
+  const forecastBtns = document.querySelectorAll('.forecast-btn');
+  forecastBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      forecastBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      forecastHorizon = parseInt(btn.dataset.hours);
+      updateGrid();
+      
+      const label = forecastHorizon === 0 ? 'Live View' : `+${forecastHorizon}h Forecast`;
+      showToast(`Forecast horizon: ${label}`);
+    });
+  });
+}
+
+// ==========================================
+// Feature 3: Autonomous Drone Swarm
+// ==========================================
+function initDroneSwarm() {
+  const droneBtn = document.getElementById('btn-deploy-drones');
+  if (!droneBtn) return;
+
+  droneBtn.addEventListener('click', () => {
+    // Find highest eco-risk cell as target
+    let target = null;
+    let maxRisk = 0;
+    gridData.forEach(cell => {
+      if (cell.isLand) return;
+      if ((cell.ecoRisk || 0) > maxRisk) {
+        maxRisk = cell.ecoRisk || 0;
+        target = cell;
+      }
+    });
+
+    if (!target) {
+      target = { lat: 10.0, lng: 75.5 };
+    }
+
+    deployDroneSwarm(target.lat, target.lng, 3);
+  });
+}
+
+function deployDroneSwarm(targetLat, targetLng, count) {
+  if (!map || !droneLayerGroup) return;
+  droneLayerGroup.clearLayers();
+
+  // Get launch point from selected port
+  const port = FISHING_HARBORS.find(h => h.id === selectedPort) || { lat: 10.18, lng: 76.22 };
+  
+  showToast(`Deploying ${count} inspection drones to ${targetLat.toFixed(2)}°N, ${targetLng.toFixed(2)}°E`);
+  try { playSonarPing(1200, 0.3, 'sine'); } catch(e) {}
+
+  // Pan to midpoint
+  const midLat = (port.lat + targetLat) / 2;
+  const midLng = (port.lng + targetLng) / 2;
+  map.setView([midLat, midLng], 9, { animate: true, duration: 1 });
+
+  // Create drone markers
+  const drones = [];
+  for (let i = 0; i < count; i++) {
+    const offset = (i - (count - 1) / 2) * 0.05;
+    const marker = L.circleMarker([port.lat + offset, port.lng + offset], {
+      radius: 5,
+      color: '#06b6d4',
+      weight: 2,
+      fillColor: '#06b6d4',
+      fillOpacity: 0.9
+    }).addTo(droneLayerGroup);
+    
+    marker.bindTooltip(`Drone ${i + 1}`, { permanent: false, className: 'drone-tooltip' });
+    drones.push({ marker, startLat: port.lat + offset, startLng: port.lng + offset, progress: 0 });
+  }
+
+  // Animate drones flying to target
+  const animDuration = 3000; // ms
+  const startTime = performance.now();
+
+  function animateDrones(now) {
+    const elapsed = now - startTime;
+    const t = Math.min(1, elapsed / animDuration);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+
+    drones.forEach((d, i) => {
+      const offset = (i - (count - 1) / 2) * 0.03 * (1 - eased);
+      const lat = d.startLat + (targetLat - d.startLat + offset) * eased;
+      const lng = d.startLng + (targetLng - d.startLng + offset) * eased;
+      d.marker.setLatLng([lat, lng]);
+    });
+
+    if (t < 1) {
+      requestAnimationFrame(animateDrones);
+    } else {
+      // Drones arrived — show scan ring
+      try { playSonarPing(600, 0.8, 'sine'); } catch(e) {}
+      showDroneScanRing(targetLat, targetLng);
+      showToast('Drone swarm scan complete. Report transmitted to Matsya AI.');
+    }
+  }
+
+  requestAnimationFrame(animateDrones);
+}
+
+function showDroneScanRing(lat, lng) {
+  let radius = 50;
+  const scanRing = L.circle([lat, lng], {
+    radius: radius,
+    color: '#06b6d4',
+    weight: 2,
+    fillColor: '#06b6d4',
+    fillOpacity: 0.15,
+    interactive: false
+  }).addTo(droneLayerGroup);
+
+  // Expanding ring animation
+  const expandInterval = setInterval(() => {
+    radius += 200;
+    if (radius > 5000) {
+      clearInterval(expandInterval);
+      setTimeout(() => {
+        if (droneLayerGroup) droneLayerGroup.removeLayer(scanRing);
+      }, 2000);
+      return;
+    }
+    scanRing.setRadius(radius);
+    scanRing.setStyle({ fillOpacity: Math.max(0, 0.15 - radius / 50000) });
+  }, 50);
+}
+
+// ==========================================
+// Feature 4: ESG Certificate & Catch Logger
+// ==========================================
+function initESGCertificate() {
+  const logBtn = document.getElementById('btn-log-catch');
+  const modal = document.getElementById('certificate-modal');
+  const closeBtn = document.getElementById('cert-close-btn');
+  const downloadBtn = document.getElementById('cert-download-btn');
+
+  if (!logBtn || !modal) return;
+
+  logBtn.addEventListener('click', () => {
+    logCatch();
+  });
+
+  closeBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.style.display = 'none';
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    window.print();
+  });
+}
+
+function logCatch() {
+  const modal = document.getElementById('certificate-modal');
+  if (!selectedCell) {
+    showToast('Select a grid cell on the map first to log a catch.');
+    return;
+  }
+
+  if (selectedCell.isLand) {
+    showToast('Cannot log a catch on land. Select an ocean cell.');
+    return;
+  }
+
+  // Calculate ESG score (0-100)
+  const ecoRisk = selectedCell.ecoRisk || 0.3;
+  const fishScore = selectedCell.fishingScore || 50;
+  const distCoast = selectedCell.minDistanceToCoast || 20;
+  const isRestricted = selectedCell.isRestrictedZone || false;
+
+  let esgScore = 0;
+  esgScore += Math.max(0, (1 - ecoRisk)) * 35;  // Low eco-risk = good
+  esgScore += Math.min(fishScore, 100) / 100 * 25; // High fishing score = good
+  esgScore += Math.min(distCoast, 80) / 80 * 20;   // Farther from coast = less pressure
+  esgScore += isRestricted ? 0 : 20;                // Not in protected zone = compliant
+  esgScore = Math.round(Math.min(100, Math.max(0, esgScore)));
+
+  // Generate certificate data
+  const now = new Date();
+  const certId = `THL-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+  const hash = btoa(`${certId}:${selectedCell.lat}:${selectedCell.lng}:${esgScore}:${now.getTime()}`);
+
+  // Populate modal
+  document.getElementById('cert-score-text').textContent = esgScore;
+  document.getElementById('cert-id').textContent = certId;
+  document.getElementById('cert-coords').textContent = `${selectedCell.lat.toFixed(3)}°N, ${selectedCell.lng.toFixed(3)}°E`;
+  document.getElementById('cert-port').textContent = selectedPort.charAt(0).toUpperCase() + selectedPort.slice(1);
+  document.getElementById('cert-sst').textContent = `${(selectedCell.sst || 0).toFixed(1)}°C`;
+  document.getElementById('cert-ecorisk').textContent = `${(ecoRisk * 100).toFixed(0)}%`;
+  document.getElementById('cert-fishing').textContent = `${fishScore}%`;
+  document.getElementById('cert-timestamp').textContent = now.toISOString().replace('T', ' ').substring(0, 19);
+  document.getElementById('cert-hash').textContent = `HASH: ${hash.substring(0, 48)}...`;
+
+  // Animate the score ring
+  const ring = document.getElementById('cert-score-ring');
+  const circumference = 326.7;
+  const offset = circumference - (circumference * esgScore / 100);
+  setTimeout(() => {
+    ring.style.strokeDashoffset = offset;
+  }, 100);
+
+  // Set ring color based on score
+  if (esgScore >= 70) {
+    ring.style.stroke = 'var(--color-primary)';
+  } else if (esgScore >= 40) {
+    ring.style.stroke = '#f59e0b';
+  } else {
+    ring.style.stroke = '#ef4444';
+  }
+
+  // Show modal
+  modal.style.display = 'flex';
+  try { playSonarPing(900, 0.4, 'sine'); } catch(e) {}
 }
