@@ -2126,6 +2126,15 @@ async function triggerSOS() {
     map.setView([worstCell.lat, worstCell.lng], 10, { animate: true, duration: 1.5 });
   }
 
+  // Create a safe stripped object for the AI context
+  const safeWorstCell = {
+    lat: worstCell.lat,
+    lng: worstCell.lng,
+    ecoRisk: worstCell.ecoRisk,
+    currentSpeed: worstCell.currentSpeed,
+    isRestrictedZone: worstCell.isRestrictedZone
+  };
+
   // Ask AI for emergency response
   try {
     const response = await fetch('/api/gemini-advisory', {
@@ -2133,7 +2142,7 @@ async function triggerSOS() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query: `EMERGENCY: A severe ocean anomaly has been detected at ${worstCell.lat.toFixed(3)}°N, ${worstCell.lng.toFixed(3)}°E. Eco-risk is ${(worstCell.ecoRisk || 0.85).toFixed(2)} and current speed is ${(worstCell.currentSpeed || 0.8).toFixed(1)} m/s. Issue an emergency evacuation advisory for nearby vessels. Recommend the nearest safe harbor and evacuation route.`,
-        context: { emergency: true, cell: worstCell }
+        context: { emergency: true, cell: safeWorstCell }
       })
     });
     const data = await response.json();
@@ -2305,12 +2314,24 @@ async function generateDroneAIReport(lat, lng) {
           ? `Detected high concentrations of plastic debris and abnormal surface oil sheen. Eco-risk verified as HIGH.` 
           : `Water quality is nominal. No illegal activity detected. Safe for sustainable fishing operations.`);
 
+    // Create a bulletproof stripped cell object for JSON stringification
+    const safeCell = selectedCell ? {
+      lat: selectedCell.lat,
+      lng: selectedCell.lng,
+      ecoRisk: selectedCell.ecoRisk,
+      isRestrictedZone: selectedCell.isRestrictedZone,
+      sst: selectedCell.sst,
+      chlorophyll: selectedCell.chlorophyll,
+      currentSpeed: selectedCell.currentSpeed,
+      currentDir: selectedCell.currentDir
+    } : null;
+
     const response = await fetch('/api/gemini-advisory', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         query: `You are generating a Drone Swarm Report. Drones have just finished scanning ${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E. The raw sensor findings are: "${simulatedFindings}". Summarize this briefly as a professional, urgent drone telemetry report. Do not add conversational filler. Start with "🚨 DRONE SWARM REPORT:"`,
-        context: { isDroneReport: true, cell: selectedCell }
+        context: { isDroneReport: true, cell: safeCell }
       })
     });
     
