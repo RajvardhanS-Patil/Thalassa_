@@ -2170,6 +2170,7 @@ function initDroneSwarm() {
   const droneBtn = document.getElementById('btn-deploy-drones');
   if (!droneBtn) return;
 
+  droneBtn.addEventListener('click', () => {
     if (!selectedCell) {
       showToast('Select a target cell on the map first to deploy drones.');
       return;
