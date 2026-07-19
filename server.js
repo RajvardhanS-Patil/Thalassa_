@@ -3,6 +3,14 @@ import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import OpenAI from 'openai';
+import 'dotenv/config';
+
+// Initialize Groq Client via OpenAI SDK
+const ai = process.env.GROQ_API_KEY ? new OpenAI({ 
+  apiKey: process.env.GROQ_API_KEY, 
+  baseURL: 'https://api.groq.com/openai/v1' 
+}) : null;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,6 +59,49 @@ const server = http.createServer((req, res) => {
     });
 
     req.pipe(proxyReq);
+    return;
+  }
+
+  // 1.5 Groq API Proxy
+  if (pathname === '/api/gemini-advisory' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', async () => {
+      try {
+        if (!ai) {
+          throw new Error('GROQ_API_KEY is not configured in .env file.');
+        }
+        
+        const data = JSON.parse(body);
+        const { query, context } = data;
+        
+        const systemPrompt = `You are Matsya Core, an advanced multimodal marine AI integrated into Thalassa (a digital twin of the Kerala coast).
+You are an expert in oceanography, sustainable fishing, and maritime navigation.
+The user is currently viewing the following spatial context:
+${JSON.stringify(context, null, 2)}
+
+Provide concise, practical advice based on this context. Answer the user's query clearly and directly. Keep responses under 100 words unless detail is required.
+If you recommend navigating to a specific location or coordinate, you MUST include a spatial pan tag in your response in the format [PAN: lat, lng]. For example: [PAN: 10.4, 76.0]. This will allow the map to automatically pan to that location.`;
+
+        const response = await ai.chat.completions.create({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: query }
+          ],
+          temperature: 0.2
+        });
+        
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ text: response.choices[0].message.content }));
+      } catch (error) {
+        console.error('[Groq Error]', error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message }));
+      }
+    });
     return;
   }
 

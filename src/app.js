@@ -1817,3 +1817,186 @@ function playSonarPing(freq = 800, duration = 0.6, type = 'sine') {
     console.warn('AudioContext failed to start/play:', e);
   }
 }
+
+
+// ==========================================
+// Matsya Core Gemini AI Assistant Logic
+// ==========================================
+
+function initGeminiAssistant() {
+  const aiPanel = document.getElementById('matsya-ai-panel');
+  const aiToggleBtn = document.getElementById('ai-toggle-btn');
+  const aiCloseBtn = document.getElementById('ai-close-btn');
+  const aiChatInput = document.getElementById('ai-chat-input');
+  const aiSubmitBtn = document.getElementById('ai-submit-btn');
+  const aiVoiceBtn = document.getElementById('ai-voice-btn');
+  const aiChatHistory = document.getElementById('ai-chat-history');
+
+  if (!aiPanel || !aiToggleBtn) return; // Guard clause
+
+  // Toggle Panel
+  aiToggleBtn.addEventListener('click', () => {
+    aiPanel.style.display = aiPanel.style.display === 'none' ? 'flex' : 'none';
+  });
+
+  aiCloseBtn.addEventListener('click', () => {
+    aiPanel.style.display = 'none';
+  });
+
+  // Clear chat
+  const aiClearBtn = document.getElementById('ai-clear-btn');
+  if (aiClearBtn) {
+    aiClearBtn.addEventListener('click', () => {
+      aiChatHistory.innerHTML = '';
+      appendMessage("Chat cleared. I'm still connected to the live spatial grid. How can I help?", 'system');
+    });
+  }
+
+  // SVG icons for avatars
+  const botAvatarSVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1.27A7 7 0 0 1 14 23h-4a7 7 0 0 1-6.73-5H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/><circle cx="9.5" cy="15.5" r="1"/><circle cx="14.5" cy="15.5" r="1"/></svg>`;
+  const userAvatarSVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+
+  // Collect Current Spatial Context
+  function getSpatialContext() {
+    return {
+      mode: currentMode,
+      selectedPort: selectedPort,
+      dayOfYear: dayOfYear,
+      activeOverlays: activeOverlays,
+      telemetry: selectedCell ? {
+        sst: selectedCell.sst,
+        chlorophyll: selectedCell.chl,
+        currentVector: selectedCell.currents,
+        distanceToCoast: selectedCell.distCoast,
+        ecoRisk: selectedCell.ecoRisk,
+        yieldScore: selectedCell.yieldScore
+      } : 'No specific cell selected. User is viewing the general map.'
+    };
+  }
+
+  function appendMessage(text, sender) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `ai-message ${sender}`;
+    msgDiv.innerHTML = `
+      <div class="ai-msg-avatar">${sender === 'system' ? botAvatarSVG : userAvatarSVG}</div>
+      <div class="ai-msg-content">${text}</div>
+    `;
+    aiChatHistory.appendChild(msgDiv);
+    aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
+  }
+
+  async function sendToGemini(query) {
+    if (!query.trim()) return;
+    
+    appendMessage(query, 'user');
+    aiChatInput.value = '';
+    
+    // Add thinking state
+    const thinkingDiv = document.createElement('div');
+    thinkingDiv.className = 'ai-message system';
+    thinkingDiv.innerHTML = `
+      <div class="ai-msg-avatar">${botAvatarSVG}</div>
+      <div class="ai-msg-content" style="color: rgba(166, 207, 190, 0.5); display: flex; align-items: center; gap: 8px;">
+        <span class="ai-thinking-dot" style="display:inline-block; width:8px; height:8px; background:var(--color-primary); border-radius:50%;"></span>
+        Thinking...
+      </div>
+    `;
+    aiChatHistory.appendChild(thinkingDiv);
+    aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
+
+    try {
+      const response = await fetch('/api/gemini-advisory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: query,
+          context: getSpatialContext()
+        })
+      });
+      
+      const data = await response.json();
+      
+      // Remove thinking
+      if (aiChatHistory.contains(thinkingDiv)) {
+        aiChatHistory.removeChild(thinkingDiv);
+      }
+      
+      if (data.error) {
+        appendMessage(`Error: ${data.error}`, 'system');
+      } else {
+        let responseText = data.text;
+        
+        // Parse [PAN: lat, lng] tag
+        const panRegex = /\[PAN:\s*(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)\]/i;
+        const match = responseText.match(panRegex);
+        
+        if (match && map) {
+          const lat = parseFloat(match[1]);
+          const lng = parseFloat(match[3]);
+          map.setView([lat, lng], 10, { animate: true, duration: 1.5 });
+          
+          // Remove the tag from the displayed text
+          responseText = responseText.replace(panRegex, '').trim();
+        }
+        
+        appendMessage(responseText, 'system');
+      }
+    } catch (err) {
+      if (aiChatHistory.contains(thinkingDiv)) {
+        aiChatHistory.removeChild(thinkingDiv);
+      }
+      appendMessage(`Connection Error: ${err.message}`, 'system');
+    }
+  }
+
+  // Event Listeners for submission
+  aiSubmitBtn.addEventListener('click', () => sendToGemini(aiChatInput.value));
+  aiChatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendToGemini(aiChatInput.value);
+  });
+
+  // Basic Voice-to-Text Setup (Web Speech API)
+  if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    
+    const startRecording = () => {
+      aiVoiceBtn.classList.add('recording');
+      try { recognition.start(); } catch (e) {}
+    };
+
+    const stopRecording = () => {
+      aiVoiceBtn.classList.remove('recording');
+      try { recognition.stop(); } catch (e) {}
+    };
+
+    aiVoiceBtn.addEventListener('mousedown', startRecording);
+    aiVoiceBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+    
+    aiVoiceBtn.addEventListener('mouseup', stopRecording);
+    aiVoiceBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecording(); });
+    aiVoiceBtn.addEventListener('mouseleave', stopRecording);
+    
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      aiChatInput.value = transcript;
+      sendToGemini(transcript);
+    };
+    
+    recognition.onerror = (event) => {
+      console.warn('Speech recognition error', event.error);
+      aiVoiceBtn.classList.remove('recording');
+    };
+  } else {
+    aiVoiceBtn.style.display = 'none'; // hide if not supported
+  }
+}
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initGeminiAssistant);
+} else {
+  initGeminiAssistant();
+}
