@@ -51,18 +51,29 @@ const LAT_MAX = 12.8;
 const LNG_MIN = 74.5;
 const LNG_MAX = 77.5;
 
+// Grid resolution — must match data_engine.js
+const GRID_ROWS = 48;
+const GRID_COLS = 36;
+
 // Leaflet Layer Groups
 let gridLayerGroup = null;
 let conservationLayerGroup = null;
 let portsLayerGroup = null;
 let currentsLayerGroup = null;
 let gridLinesLayerGroup = null;
+let aisLayerGroup = null; // Simulated vessel AIS dots
 
 // Interactive Highlights & Vessel Layers
 let hoverOutline = null;
 let selectedOutline = null;
 let routePolyline = null;
 let vesselMarker = null;
+let clickPinMarker = null; // Exact click-point pin
+
+// Map feature state
+let currentTileLayer = 'carto'; // 'carto', 'satellite', 'dark'
+let tileLayers = {};
+let contextMenuOpen = false;
 
 // Guided Tour state
 let tourActive = false;
@@ -101,8 +112,8 @@ const tourSteps = [
   }
 ];
 
-// 2D Array to store 432 cell layer references
-const cellLayers = Array(24).fill(null).map(() => Array(18).fill(null));
+// 2D Array to store cell layer references (GRID_ROWS × GRID_COLS)
+const cellLayers = Array(GRID_ROWS).fill(null).map(() => Array(GRID_COLS).fill(null));
 
 // Initialize Application
 function init() {
@@ -175,14 +186,14 @@ function init() {
     interactive: false
   });
 
-  // Create grid cell rectangles (24x18 = 432 cells)
-  const latStep = (LAT_MAX - LAT_MIN) / 24;
-  const lngStep = (LNG_MAX - LNG_MIN) / 18;
+  // Create grid cell rectangles (GRID_ROWS × GRID_COLS cells)
+  const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
+  const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
   const canvasRenderer = L.canvas(); // High-performance canvas vector renderer
 
-  for (let r = 0; r < 24; r++) {
+  for (let r = 0; r < GRID_ROWS; r++) {
     const lat = LAT_MAX - (r * latStep) - (latStep / 2);
-    for (let c = 0; c < 18; c++) {
+    for (let c = 0; c < GRID_COLS; c++) {
       const lng = LNG_MIN + (c * lngStep) + (lngStep / 2);
       
       const bounds = [
@@ -241,6 +252,9 @@ function init() {
 
   showToast("Thalassa workspace initialized. Native Leaflet layers active.");
   
+  // Start AIS vessel traffic simulation
+  initAISVessels();
+
   // Start the animation frame loop
   requestAnimationFrame(tick);
 }
@@ -279,8 +293,8 @@ function tick() {
       }
       
       // Look up current cell
-      const latStep = (LAT_MAX - LAT_MIN) / 24;
-      const lngStep = (LNG_MAX - LNG_MIN) / 18;
+      const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
+      const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
       const cell = gridData.find(c => Math.abs(c.lat - vPos.lat) <= (latStep / 2) && Math.abs(c.lng - vPos.lng) <= (lngStep / 2)) || {
         currentSpeed: 0.2,
         currentDir: 90,
@@ -1025,8 +1039,8 @@ function handleMapMouseMove(e) {
   const lng = e.latlng.lng;
   
   const cell = gridData.find(cell => {
-    const latStep = (LAT_MAX - LAT_MIN) / 24;
-    const lngStep = (LNG_MAX - LNG_MIN) / 18;
+    const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
+    const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
     return Math.abs(cell.lat - lat) <= (latStep / 2) && Math.abs(cell.lng - lng) <= (lngStep / 2);
   });
   
@@ -1037,8 +1051,8 @@ function handleMapMouseMove(e) {
       updateTelemetryCard(cell);
       
       // Update hover outline rectangle bounds
-      const latStep = (LAT_MAX - LAT_MIN) / 24;
-      const lngStep = (LNG_MAX - LNG_MIN) / 18;
+      const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
+      const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
       const bounds = [
         [cell.lat - latStep/2, cell.lng - lngStep/2],
         [cell.lat + latStep/2, cell.lng + lngStep/2]
@@ -1074,8 +1088,8 @@ function handleMapClick(e) {
   const lng = e.latlng.lng;
   
   const cell = gridData.find(cell => {
-    const latStep = (LAT_MAX - LAT_MIN) / 24;
-    const lngStep = (LNG_MAX - LNG_MIN) / 18;
+    const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
+    const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
     return Math.abs(cell.lat - lat) <= (latStep / 2) && Math.abs(cell.lng - lng) <= (lngStep / 2);
   });
 
@@ -1093,6 +1107,10 @@ function handleMapClick(e) {
     }
     
     selectedCell = cell;
+    // Store the exact click coordinates for sub-cell precision
+    selectedCell._clickLat = lat;
+    selectedCell._clickLng = lng;
+    
     optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
     vesselProgress = 0; // Reset transit animation
     simFuelBurned = 0;
@@ -1101,8 +1119,8 @@ function handleMapClick(e) {
     updateRouteTelemetry();
     
     // Update selected outline bounds
-    const latStep = (LAT_MAX - LAT_MIN) / 24;
-    const lngStep = (LNG_MAX - LNG_MIN) / 18;
+    const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
+    const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
     const bounds = [
       [cell.lat - latStep/2, cell.lng - lngStep/2],
       [cell.lat + latStep/2, cell.lng + lngStep/2]
@@ -1111,6 +1129,9 @@ function handleMapClick(e) {
     if (!map.hasLayer(selectedOutline)) {
       selectedOutline.addTo(map);
     }
+
+    // Place exact click-point pin marker
+    placeClickPin(lat, lng);
 
     // Set route coordinates
     const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
@@ -1124,8 +1145,11 @@ function handleMapClick(e) {
     }
 
     updateGrid();
-    showToast(`Target coordinate locked at: ${cell.lat.toFixed(3)}°N, ${cell.lng.toFixed(3)}°E`);
+    showToast(`📍 Pinned: ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`);
   }
+
+  // Close any open context menu
+  closeContextMenu();
 }
 
 // Trigger real-time Live data fetch from INCOIS ERDDAP
@@ -2441,3 +2465,281 @@ function logCatch() {
   modal.style.display = 'flex';
   try { playSonarPing(900, 0.4, 'sine'); } catch(e) {}
 }
+
+// ==========================================
+// NEW MAP FEATURES
+// ==========================================
+
+// --- Click Pin: Exact sub-cell precision marker ---
+function placeClickPin(lat, lng) {
+  if (clickPinMarker) {
+    map.removeLayer(clickPinMarker);
+  }
+  const pinIcon = L.divIcon({
+    className: '',
+    html: `<div class="click-pin">
+      <div class="click-pin-dot"></div>
+      <div class="click-pin-ring"></div>
+      <div class="click-pin-label">${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E</div>
+    </div>`,
+    iconAnchor: [6, 6]
+  });
+  clickPinMarker = L.marker([lat, lng], { icon: pinIcon, interactive: false, zIndexOffset: 1000 }).addTo(map);
+}
+
+// --- Cursor Coordinate HUD ---
+function initCoordHUD() {
+  const hud = document.getElementById('coord-hud');
+  if (!hud || !map) return;
+
+  map.on('mousemove', (e) => {
+    hud.textContent = `${e.latlng.lat.toFixed(4)}°N  ${e.latlng.lng.toFixed(4)}°E`;
+    hud.style.opacity = '1';
+  });
+
+  map.on('mouseout', () => {
+    hud.style.opacity = '0';
+  });
+}
+
+// --- Right-Click Context Menu ---
+function initContextMenu() {
+  if (!map) return;
+
+  const menu = document.getElementById('map-context-menu');
+  if (!menu) return;
+
+  map.on('contextmenu', (e) => {
+    L.DomEvent.preventDefault(e.originalEvent);
+    const clickLat = e.latlng.lat;
+    const clickLng = e.latlng.lng;
+
+    // Position menu at click point
+    const containerPoint = map.latLngToContainerPoint(e.latlng);
+    menu.style.left = `${containerPoint.x + 8}px`;
+    menu.style.top  = `${containerPoint.y + 8}px`;
+    menu.style.display = 'block';
+    menu.style.animation = 'none';
+    menu.offsetHeight; // reflow
+    menu.style.animation = '';
+    contextMenuOpen = true;
+
+    // Wire actions with this location
+    document.getElementById('ctx-set-target').onclick = () => {
+      const fakeEvent = { latlng: e.latlng };
+      handleMapClick(fakeEvent);
+      closeContextMenu();
+    };
+
+    document.getElementById('ctx-deploy-drones').onclick = () => {
+      const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
+      const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
+      const cell = gridData.find(c => Math.abs(c.lat - clickLat) <= latStep/2 && Math.abs(c.lng - clickLng) <= lngStep/2);
+      if (cell && !cell.isLand) {
+        selectedCell = cell;
+        deployDroneSwarm(clickLat, clickLng, 3);
+      } else {
+        showToast('Cannot deploy drones on land or outside grid.');
+      }
+      closeContextMenu();
+    };
+
+    document.getElementById('ctx-ask-ai').onclick = () => {
+      const aiPanel = document.getElementById('matsya-ai-panel');
+      const aiInput = document.getElementById('ai-chat-input');
+      if (aiPanel) aiPanel.style.display = 'flex';
+      if (aiInput) {
+        aiInput.value = `Tell me about the ocean conditions at ${clickLat.toFixed(3)}°N, ${clickLng.toFixed(3)}°E`;
+        aiInput.focus();
+      }
+      closeContextMenu();
+    };
+
+    document.getElementById('ctx-log-catch').onclick = () => {
+      if (!selectedCell) {
+        // Auto-select the nearest cell
+        const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
+        const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
+        const cell = gridData.find(c => Math.abs(c.lat - clickLat) <= latStep/2 && Math.abs(c.lng - clickLng) <= lngStep/2);
+        if (cell && !cell.isLand) selectedCell = cell;
+      }
+      logCatch();
+      closeContextMenu();
+    };
+  });
+
+  // Click anywhere closes menu
+  map.on('click', closeContextMenu);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeContextMenu(); });
+}
+
+function closeContextMenu() {
+  const menu = document.getElementById('map-context-menu');
+  if (menu) menu.style.display = 'none';
+  contextMenuOpen = false;
+}
+
+// --- Map Tile Layer Switcher ---
+function initTileSwitcher() {
+  tileLayers = {
+    carto: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 18, minZoom: 6 }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, minZoom: 6, attribution: '© Esri' }),
+    dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18, minZoom: 6 })
+  };
+
+  // Start on existing carto layer (already added in init)
+  const btns = document.querySelectorAll('.tile-btn');
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const style = btn.dataset.style;
+      if (style === currentTileLayer) return;
+
+      // Remove old tile layer
+      if (tileLayers[currentTileLayer] && map.hasLayer(tileLayers[currentTileLayer])) {
+        map.removeLayer(tileLayers[currentTileLayer]);
+      } else {
+        // Remove the original tile layer added during init
+        map.eachLayer(layer => {
+          if (layer instanceof L.TileLayer && !Object.values(tileLayers).includes(layer)) {
+            map.removeLayer(layer);
+          }
+        });
+      }
+
+      // Add new tile layer underneath everything
+      tileLayers[style].addTo(map).bringToBack();
+      currentTileLayer = style;
+
+      btns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      showToast(`Map: ${btn.textContent.trim()} view`);
+    });
+  });
+}
+
+// --- Fly-To Search Bar ---
+function initSearchBar() {
+  const input = document.getElementById('map-search-input');
+  const btn = document.getElementById('map-search-btn');
+  if (!input || !btn) return;
+
+  // Named locations shortcut
+  const namedLocations = {
+    'munambam': [10.18, 76.22],
+    'kochi': [9.97, 76.28],
+    'trivandrum': [8.51, 76.94],
+    'kozhikode': [11.25, 75.78],
+    'kannur': [11.87, 75.37],
+    'thrissur': [10.52, 76.21],
+    'alappuzha': [9.50, 76.34],
+    'kollam': [8.89, 76.58],
+    'calicut': [11.25, 75.78],
+    'mangalore': [12.87, 74.88],
+  };
+
+  const doSearch = () => {
+    const raw = input.value.trim().toLowerCase();
+    if (!raw) return;
+
+    // Check named locations
+    const match = Object.keys(namedLocations).find(k => raw.includes(k));
+    if (match) {
+      map.flyTo(namedLocations[match], 11, { duration: 1.5 });
+      showToast(`Flying to ${match.charAt(0).toUpperCase() + match.slice(1)}...`);
+      input.value = '';
+      return;
+    }
+
+    // Try to parse "lat, lng"
+    const coordMatch = raw.match(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]);
+      const lng = parseFloat(coordMatch[2]);
+      if (lat >= LAT_MIN - 2 && lat <= LAT_MAX + 2 && lng >= LNG_MIN - 2 && lng <= LNG_MAX + 2) {
+        map.flyTo([lat, lng], 11, { duration: 1.5 });
+        placeClickPin(lat, lng);
+        showToast(`Flying to ${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E`);
+        input.value = '';
+        return;
+      }
+    }
+    showToast('Location not found. Try a port name or "lat, lng" format.');
+  };
+
+  btn.addEventListener('click', doSearch);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+}
+
+// --- Simulated AIS Vessel Traffic ---
+const AIS_VESSELS = [
+  { id: 'V1', lat: 10.45, lng: 76.10, heading: 200, speed: 0.003, name: 'FV Meena' },
+  { id: 'V2', lat: 9.80,  lng: 75.80, heading: 30,  speed: 0.002, name: 'FV Pavithra' },
+  { id: 'V3', lat: 11.10, lng: 75.60, heading: 160, speed: 0.004, name: 'FV Kadalamma' },
+  { id: 'V4', lat: 8.70,  lng: 76.40, heading: 350, speed: 0.002, name: 'FV Arabiansea' },
+  { id: 'V5', lat: 10.90, lng: 75.90, heading: 240, speed: 0.003, name: 'FV Varuna' },
+  { id: 'V6', lat: 9.30,  lng: 75.70, heading: 50,  speed: 0.002, name: 'FV Sagara' },
+];
+
+let aisMarkers = [];
+
+function initAISVessels() {
+  aisLayerGroup = L.layerGroup().addTo(map);
+
+  AIS_VESSELS.forEach(v => {
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="ais-dot" title="${v.name}">
+        <div class="ais-dot-inner" style="transform: rotate(${v.heading}deg)">▲</div>
+      </div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7]
+    });
+    const marker = L.marker([v.lat, v.lng], { icon, interactive: true, zIndexOffset: 500 })
+      .bindTooltip(`🚢 ${v.name}`, { className: 'ais-tooltip', sticky: true })
+      .addTo(aisLayerGroup);
+    aisMarkers.push({ vessel: v, marker });
+  });
+
+  // Animate AIS vessels in the tick loop
+  animateAIS();
+}
+
+function animateAIS() {
+  aisMarkers.forEach(({ vessel, marker }) => {
+    // Move in heading direction
+    const rad = vessel.heading * Math.PI / 180;
+    vessel.lat += Math.cos(rad) * vessel.speed * 0.01;
+    vessel.lng += Math.sin(rad) * vessel.speed * 0.01;
+
+    // Bounce off bounds
+    if (vessel.lat > LAT_MAX || vessel.lat < LAT_MIN) {
+      vessel.heading = (360 - vessel.heading + 180) % 360;
+      vessel.lat = Math.max(LAT_MIN + 0.1, Math.min(LAT_MAX - 0.1, vessel.lat));
+    }
+    if (vessel.lng > LNG_MAX || vessel.lng < LNG_MIN) {
+      vessel.heading = (360 - vessel.heading) % 360;
+      vessel.lng = Math.max(LNG_MIN + 0.1, Math.min(LNG_MAX - 0.1, vessel.lng));
+    }
+
+    marker.setLatLng([vessel.lat, vessel.lng]);
+  });
+
+  requestAnimationFrame(animateAIS);
+}
+
+// Wire all new features into the setup
+(function wireNewMapFeatures() {
+  // Run after DOM is ready
+  const run = () => {
+    initCoordHUD();
+    initContextMenu();
+    initTileSwitcher();
+    initSearchBar();
+    // AIS vessels are started after map init in init()
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+})();

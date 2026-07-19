@@ -18,8 +18,8 @@ const LNG_MIN = 74.5;
 const LNG_MAX = 77.5;
 
 // Grid size configuration
-const GRID_ROWS = 24;
-const GRID_COLS = 18;
+const GRID_ROWS = 48;
+const GRID_COLS = 36;
 
 /**
  * Determine if a point is inside a polygon using ray-casting algorithm

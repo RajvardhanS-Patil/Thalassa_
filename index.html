@@ -116,6 +116,33 @@
         <div class="map-container">
           <div id="map" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1;"></div>
           
+          <!-- Search Bar (top-center) -->
+          <div class="map-search-bar" id="map-search-bar">
+            <input id="map-search-input" type="text" placeholder="Search port or coordinates (e.g. 10.4, 76.0)..." autocomplete="off" spellcheck="false" />
+            <button id="map-search-btn" title="Search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+          </div>
+
+          <!-- Tile Switcher (top-right) -->
+          <div class="tile-switcher" id="tile-switcher">
+            <button class="tile-btn active" data-style="carto" title="Default map">🗺</button>
+            <button class="tile-btn" data-style="satellite" title="Satellite view">🛰</button>
+            <button class="tile-btn" data-style="dark" title="Dark mode">🌑</button>
+          </div>
+
+          <!-- Coordinate HUD (bottom-right of map) -->
+          <div id="coord-hud" class="coord-hud">0.0000°N  0.0000°E</div>
+
+          <!-- Right-click Context Menu -->
+          <div id="map-context-menu" class="map-context-menu" style="display:none;">
+            <div class="ctx-menu-header">Quick Actions</div>
+            <button class="ctx-menu-item" id="ctx-set-target">📍 Set as Fishing Target</button>
+            <button class="ctx-menu-item" id="ctx-deploy-drones">🛸 Deploy Drones Here</button>
+            <button class="ctx-menu-item" id="ctx-ask-ai">🤖 Ask Matsya AI</button>
+            <button class="ctx-menu-item" id="ctx-log-catch">🔗 Log Catch Here</button>
+          </div>
+
           <!-- Floating Map Legend (Cohere Style) -->
           <div id="map-legend" class="hud-panel" style="position: absolute; bottom: 20px; left: 20px; z-index: 10; display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 220px; font-family: var(--font-body); font-size: 11px; pointer-events: auto;">
             <span class="mono-label" id="legend-title" style="color: var(--ink); font-weight: 700; font-size: 9px; letter-spacing: 1px;">Yield Analysis Legend</span>
