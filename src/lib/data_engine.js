@@ -451,8 +451,10 @@ export function calculateOptimizedRoute(portId, targetCell, grid, dayOfYear = 17
     // Snap exact start and end coordinates
     path[0] = { lat: startLat, lng: startLng };
     path[path.length - 1] = { lat: endLat, lng: endLng };
-    // Resample path to exactly 15 points for smooth vessel animation
-    path = resamplePath(path, 15);
+    // Smooth with Catmull-Rom spline for natural curved route
+    path = catmullRomSpline(path, 6);
+    // Resample to 40 points for smooth vessel animation
+    path = resamplePath(path, 40);
   } else {
     // Fallback: simple deflection-based path
     path = [];
@@ -555,17 +557,28 @@ function findAStarPath(startCell, targetCell, grid) {
     }
 
     for (const neighbor of neighbors) {
-      const neighborKey = cellKey(neighbor);
+      const neighborKey = cellKey(neighbor);      
       if (closedSet.has(neighborKey)) continue;
-      if (neighbor.isLand) continue; // Walled off by land
 
-      // Traversal cost factors (highly penalize restricted / sensitive zones)
+      // Traversal cost factors — penalize restricted zones, high eco-risk, rough weather
       let costMultiplier = 1.0;
+      if (neighbor.isLand) continue; // Walled off by land
       if (neighbor.isRestrictedZone) {
-        costMultiplier = 15.0; // Strictly avoid spawning bans
+        costMultiplier = 20.0; // Strictly avoid spawning bans
+      } else if (neighbor.ecoRisk > 0.75) {
+        costMultiplier = 6.0;  // Highly sensitive ecological zone
+      } else if (neighbor.ecoRisk > 0.5) {
+        costMultiplier = 3.0;
       } else if (neighbor.conservationScore > 30) {
         costMultiplier = 1.5 + (neighbor.conservationScore / 50.0);
       }
+      // Penalize cells with rough sea conditions (wave height/wind)
+      const waveH = neighbor.waveHeight || 0;
+      const windS = neighbor.windSpeed || 0;
+      if (waveH > 2.5) costMultiplier += 4.0;      // Very rough seas
+      else if (waveH > 1.5) costMultiplier += 2.0; // Moderate seas
+      if (windS > 30) costMultiplier += 3.0;       // Gale force winds
+      else if (windS > 20) costMultiplier += 1.0;  // Strong breeze
 
       // Add small penalty for diagonal movement to keep routes cleaner
       const isDiagonal = (neighbor.row !== current.row) && (neighbor.col !== current.col);
@@ -586,6 +599,51 @@ function findAStarPath(startCell, targetCell, grid) {
   }
 
   return null; // Path not found
+}
+
+/**
+ * Catmull-Rom Spline: Smooths a polyline into a natural curve
+ * Takes raw A* waypoints and generates smooth intermediate curve points
+ */
+function catmullRomSpline(points, segments = 6) {
+  if (points.length < 3) return points;
+  const result = [];
+
+  // Pad endpoints
+  const pts = [
+    points[0],
+    ...points,
+    points[points.length - 1]
+  ];
+
+  for (let i = 1; i < pts.length - 2; i++) {
+    const p0 = pts[i - 1];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2];
+
+    for (let t = 0; t < segments; t++) {
+      const s = t / segments;
+      const s2 = s * s;
+      const s3 = s2 * s;
+
+      // Catmull-Rom matrix formula
+      const lat =
+        0.5 * ((2 * p1.lat) +
+        (-p0.lat + p2.lat) * s +
+        (2*p0.lat - 5*p1.lat + 4*p2.lat - p3.lat) * s2 +
+        (-p0.lat + 3*p1.lat - 3*p2.lat + p3.lat) * s3);
+      const lng =
+        0.5 * ((2 * p1.lng) +
+        (-p0.lng + p2.lng) * s +
+        (2*p0.lng - 5*p1.lng + 4*p2.lng - p3.lng) * s2 +
+        (-p0.lng + 3*p1.lng - 3*p2.lng + p3.lng) * s3);
+
+      result.push({ lat, lng });
+    }
+  }
+  result.push(points[points.length - 1]);
+  return result;
 }
 
 /**

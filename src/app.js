@@ -26,6 +26,7 @@ let playInterval = null;
 let map = null; // Leaflet map instance
 let forecastHorizon = 0; // 0, 24, 48, 72 hours ahead
 let droneLayerGroup = null; // For drone swarm markers
+let destinationPinMarker = null; // Google-style teardrop pin at destination
 
 // Animation helpers
 let pulseState = 0;
@@ -167,12 +168,34 @@ function init() {
     interactive: false
   });
 
-  // Set up vessel route path layer
+  // Set up vessel route path layer — two overlapping polylines for glow effect
   routePolyline = L.polyline([], {
-    color: 'var(--action-blue)',
-    weight: 3.5,
+    color: '#00a3ff',
+    weight: 3,
     lineCap: 'round',
     lineJoin: 'round',
+    opacity: 0.85,
+    interactive: false
+  });
+
+  // Glow/shadow layer underneath the main route
+  window._routeGlow = L.polyline([], {
+    color: '#00a3ff',
+    weight: 9,
+    lineCap: 'round',
+    lineJoin: 'round',
+    opacity: 0.18,
+    interactive: false
+  });
+
+  // Restricted-zone warning segments (red)
+  window._routeWarning = L.polyline([], {
+    color: '#ef4444',
+    weight: 3,
+    lineCap: 'round',
+    lineJoin: 'round',
+    opacity: 0.85,
+    dashArray: '6 4',
     interactive: false
   });
 
@@ -475,17 +498,13 @@ function updateGrid() {
       optimizedRoute = calculateOptimizedRoute(selectedPort, selectedCell, gridData, dayOfYear);
       updateTelemetryCard(selectedCell, true);
 
-      const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
-      routePolyline.setLatLngs(pathCoords);
-      if (!map.hasLayer(routePolyline)) {
-        routePolyline.addTo(map);
-      }
+      renderRoute(optimizedRoute);
       if (!map.hasLayer(vesselMarker)) {
         vesselMarker.addTo(map);
       }
     }
   } else {
-    if (map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+    clearRoute();
     if (map.hasLayer(vesselMarker)) map.removeLayer(vesselMarker);
   }
 
@@ -1133,12 +1152,9 @@ function handleMapClick(e) {
     // Place exact click-point pin marker
     placeClickPin(lat, lng);
 
-    // Set route coordinates
-    const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
-    routePolyline.setLatLngs(pathCoords);
-    if (!map.hasLayer(routePolyline)) {
-      routePolyline.addTo(map);
-    }
+    // Render the route with glow, colors, and destination pin
+    renderRoute(optimizedRoute);
+    placeDestinationPin(cell.lat, cell.lng);
     
     if (!map.hasLayer(vesselMarker)) {
       vesselMarker.addTo(map);
@@ -1150,6 +1166,93 @@ function handleMapClick(e) {
 
   // Close any open context menu
   closeContextMenu();
+}
+
+// ==========================================
+// Route Rendering Functions
+// ==========================================
+
+/**
+ * Renders the route with a glow underlay, main line, and red dashed warning
+ * segments where the route passes through restricted/rough-sea zones.
+ */
+function renderRoute(route) {
+  if (!route || !route.path) return;
+  const pathCoords = route.path.map(pt => [pt.lat, pt.lng]);
+
+  // Main route line
+  routePolyline.setLatLngs(pathCoords);
+  if (!map.hasLayer(routePolyline)) routePolyline.addTo(map);
+
+  // Glow layer (thick transparent underlay)
+  if (window._routeGlow) {
+    window._routeGlow.setLatLngs(pathCoords);
+    if (!map.hasLayer(window._routeGlow)) window._routeGlow.addTo(map);
+    window._routeGlow.bringToBack();
+    routePolyline.bringToFront();
+  }
+
+  // Find warning segments (restricted zones + rough seas)
+  const latStep = (LAT_MAX - LAT_MIN) / GRID_ROWS;
+  const lngStep = (LNG_MAX - LNG_MIN) / GRID_COLS;
+  const warnCoords = [];
+
+  if (window._routeWarning && gridData.length > 0) {
+    let inWarnStreak = false;
+    let warnSegStart = null;
+
+    route.path.forEach((pt, i) => {
+      const cell = gridData.find(c =>
+        Math.abs(c.lat - pt.lat) <= latStep/2 &&
+        Math.abs(c.lng - pt.lng) <= lngStep/2
+      );
+      const isDangerous = cell && (cell.isRestrictedZone || (cell.ecoRisk || 0) > 0.7 || (cell.waveHeight || 0) > 2.0);
+      if (isDangerous) {
+        warnCoords.push([pt.lat, pt.lng]);
+      }
+    });
+
+    window._routeWarning.setLatLngs(warnCoords.length > 0 ? warnCoords : []);
+    if (!map.hasLayer(window._routeWarning)) window._routeWarning.addTo(map);
+  }
+}
+
+function clearRoute() {
+  if (map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+  if (window._routeGlow && map.hasLayer(window._routeGlow)) map.removeLayer(window._routeGlow);
+  if (window._routeWarning && map.hasLayer(window._routeWarning)) map.removeLayer(window._routeWarning);
+  if (destinationPinMarker && map.hasLayer(destinationPinMarker)) {
+    map.removeLayer(destinationPinMarker);
+    destinationPinMarker = null;
+  }
+  if (map.hasLayer(vesselMarker)) map.removeLayer(vesselMarker);
+}
+
+/**
+ * Places a Google Maps-style teardrop pin at the destination
+ */
+function placeDestinationPin(lat, lng) {
+  if (destinationPinMarker) map.removeLayer(destinationPinMarker);
+
+  const pinIcon = L.divIcon({
+    className: '',
+    html: `<div class="dest-pin">
+      <svg viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg" width="28" height="42">
+        <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z"
+              fill="#00a3ff" stroke="#0d1b1e" stroke-width="1.5"/>
+        <circle cx="12" cy="12" r="5" fill="white" opacity="0.95"/>
+      </svg>
+      <div class="dest-pin-label">${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E</div>
+    </div>`,
+    iconAnchor: [14, 42],
+    iconSize: [28, 42]
+  });
+
+  destinationPinMarker = L.marker([lat, lng], {
+    icon: pinIcon,
+    interactive: false,
+    zIndexOffset: 2000
+  }).addTo(map);
 }
 
 // Trigger real-time Live data fetch from INCOIS ERDDAP
@@ -1245,7 +1348,7 @@ function switchPerspective(mode) {
   document.getElementById('route-section').style.display = 'none';
 
   if (map.hasLayer(selectedOutline)) map.removeLayer(selectedOutline);
-  if (map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+  clearRoute();
   if (map.hasLayer(vesselMarker)) map.removeLayer(vesselMarker);
 
   updateGrid();
@@ -1624,11 +1727,11 @@ function updateSidebarLists() {
           selectedOutline.addTo(map);
         }
 
-        // Set route coordinates
-        const pathCoords = optimizedRoute.path.map(pt => [pt.lat, pt.lng]);
-        routePolyline.setLatLngs(pathCoords);
-        if (!map.hasLayer(routePolyline)) {
-          routePolyline.addTo(map);
+        // Render the route with glow effect and destination pin
+        renderRoute(optimizedRoute);
+        placeDestinationPin(zone.lat, zone.lng);
+        if (!map.hasLayer(vesselMarker)) {
+          vesselMarker.addTo(map);
         }
         if (!map.hasLayer(vesselMarker)) {
           vesselMarker.addTo(map);

@@ -2070,3 +2070,29 @@ header {
   padding: 3px 8px;
 }
 
+/* Google-style Destination Pin */
+.dest-pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  filter: drop-shadow(0 4px 8px rgba(0, 163, 255, 0.5));
+  animation: destPinDrop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes destPinDrop {
+  from { transform: translateY(-20px) scale(0.7); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+.dest-pin-label {
+  margin-top: 3px;
+  background: rgba(13, 27, 30, 0.92);
+  border: 1px solid rgba(0, 163, 255, 0.4);
+  color: #00a3ff;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.3px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+
